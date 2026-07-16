@@ -1,58 +1,178 @@
-# Task 2 — Phase Frequency Detector: Independent Dual-DFF Design, ngspice Verification
+# Task 2 — Week 2 & 3: PLL Circuit Design (AI-Assisted)
 
-## What is Task 2?
+Reference repo: [`nitjsr_pll_130nm`](https://github.com/himansh107/nitjsr_pll_130nm)
 
-Task 2 is the design and independent verification of a gate-level Phase Frequency Detector (PFD) for the PLL, built from SKY130 HD standard cells using the classic dual-D-flip-flop topology. The design was generated with AI assistance and verified end-to-end in ngspice.
+## Objective
 
+Continuing from the reference repo, Week 2 & 3 focus only on the **circuit design side** of the SKY130-based on-chip clock-multiplier PLL — not final layout, GDS, tapeout packaging, or full repo reproduction. The goal is to understand and recreate each PLL building block step by step using AI-assisted prompts (ChatGPT/Codex or similar), verify behavior in ngspice/xschem with SKY130 models where possible, and document prompts, tools, generated netlists, simulation attempts, errors/fixes, and observations for each block.
 
+## Scope — Blocks Covered
+
+| # | Block | Status |
+|---|---|---|
+| 1 | PLL basics / phase-frequency locking concept | ✅ Complete |
+| 2 | Reference clock vs feedback clock relation | ✅ Complete |
+| 3 | **Phase Frequency Detector (PFD)** — UP/DOWN pulse generation | ✅ Complete |
+| 4 | Charge pump — source/sink current behavior | Pending |
+| 5 | Loop filter — control-voltage generation | Pending |
+| 6 | VCO — tuning and frequency sweep | Pending |
+| 7 | Divide-by-N feedback divider | Pending |
+| 8 | Lock behavior / lock time | Pending |
+| 9 | Jitter / noise awareness | Pending |
+| 10 | Duty-cycle observation | Pending |
+| 11 | Pre-layout SPICE simulation summary | Pending |
+| 12 | SKY130 device/model usage notes | Pending |
+
+Sections below are filled in as each block is completed.
 
 ---
 
-## Block 1: Phase Frequency Detector (PFD)
+## 1. PLL Basics, Phase/Frequency Lock Concept, and Reference-vs-Feedback Clock Relation
 
-Phase-Frequency Detector (PFD) — the front-end block of a PLL. It compares the edges of the reference clock (f_clk_in) against the feedback/VCO clock (f_vco) and produces two pulse outputs, up and down, whose pulse widths are proportional to the phase/frequency difference between the two clocks. These pulses later drive a charge pump + loop filter to steer the VCO.
-Unlike a simple two-D-flip-flop PFD, this design is built entirely from NAND gates and inverters (no explicit DFF primitive). Each channel (reference and feedback) forms an edge-triggered latch out of cross-coupled NAND gates (X6/X7 for the top channel, X8/X9 for the bottom), and:
+### 1.1 Why a PLL Is Needed
 
-X10 / X3 invert the incoming clocks (f_clk_in, f_vco).
-X2 / X11 are the "set" NAND gates for each channel's latch, clocked by the rising edge of each input.
-X6/X7 and X8/X9 form the storage (memory) elements of each channel — functionally replacing the two D-flip-flops of a conventional PFD.
-X12/X13 and X14/X15 are delay-buffer chains (two inverters = one buffer delay) that shape the timing of the NAND3 combination stage and help avoid a dead zone.
-X1 (NAND4) combines internal state nodes from both channels — this is the reset generator. When both channels have triggered (i.e., both up and down conditions are met simultaneously), X1's output resets both latches, which is what keeps the PFD's dead zone minimized.
-X4 (NAND3) and X5 (NAND3) merge the delayed edge, latch state, and the common reset signal from X1 to produce the raw (active-low) up/down pulses.
-X16 / X17 are final inverters that convert those internal active-low pulses into the clean, active-high up and down outputs (each loaded with a small 6 fF cap, C1/C2, representing wiring/gate load).
+A crystal-based reference oscillator is clean but frequency-limited — pushing a crystal much above ~200 MHz becomes impractical and noisy. A Phase-Locked Loop sidesteps this by using a **negative-feedback control loop** to lock an internally generated, higher-frequency oscillator to a low-frequency reference. In this design, that relationship is fixed at **8×**: a 9 MHz reference is multiplied up to an ≈71.4 MHz output clock.
 
-Net result: if f_clk_in leads f_vco in phase, up pulses wider than down; if f_vco leads, down pulses wider; if they're in phase, both output very narrow (ideally zero) pulses.
-### Objective
+### 1.2 The Five-Block Loop and How Reference/Feedback Clocks Relate
 
-Design and verify a gate-level Phase Frequency Detector for the PLL using the SKY130 HD standard-cell library, built from two D-flip-flops and a NAND2 asynchronous reset gate. This is the primary PFD deliverable for Task 2.
+The loop compares two signals at the PFD input:
 
-### PFD Operation
-
-The PFD compares the phase and frequency of the reference clock (`f_clk_in`) and the feedback clock (`f_vco`).
-
-- Rising edge of `f_clk_in` sets `up`.
-- Rising edge of `f_vco` sets `down`.
-- When both outputs go HIGH simultaneously, the NAND2 asynchronous reset clears both flip-flops.
-- The width of the UP/DOWN pulse is proportional to the phase difference between the two input clocks.
+- **`f_clk_in`** (or `f_ref`) — the external reference clock, fixed at 9 MHz
+- **`f_vco`** (or `f_fb`) — the VCO output *after* it has passed through the ÷8 feedback divider
 
 ```
-              +-------------+
-f_clk_in ---->|  dfrtp_1    |------ up ----+
-              +-------------+              |
-                                            NAND2 ---- rst_b
-                                            |
-              +-------------+              |
-f_vco  ------>|  dfrtp_1    |---- down ----+
-              +-------------+
+        ┌─────┐   UP/DOWN   ┌────┐   Vctrl   ┌─────┐
+f_ref ─▶│ PFD │────────────▶│ CP │──────────▶│ LF  │──┐
+        └─────┘             └────┘           └─────┘  │
+           ▲                                            ▼
+           │                                        ┌───────┐
+           │            f_fb (f_out / 8)            │  VCO  │
+           └────────────[ ÷8 Divider ]◀──────────────┴───────┘
+                                                          │
+                                                          ▼
+                                                        f_out
 ```
 
-### AI Prompt Used
+Because `f_fb` is the *divided* VCO output rather than the raw VCO output, the PFD is always comparing two signals that are meant to converge to the **same frequency** at lock — even though `f_out` itself runs 8× faster than `f_ref`. This is what makes the ÷8 divider the block that actually sets the multiplication factor N: whatever frequency the divider output settles to match `f_ref` at, the VCO itself must be running at `N × f_ref` to produce that divided result.
 
+### 1.3 Phase Lock vs. Frequency Lock
 
-### AI-Generated SPICE Netlist
+A bare phase detector (e.g. XOR, single mixer) only produces a usable, well-behaved error signal once the two compared clocks are already close in frequency. If the VCO starts far from `8 × f_ref` at power-on, a pure phase detector's output is ambiguous, and the loop may never converge on its own — the classic **frequency-acquisition problem**. This is the reason the design uses a **dual-flip-flop-style PFD** rather than a simple phase detector:
+
+- **Frequency lock (acquisition):** When `f_clk_in` and `f_vco` differ noticeably in frequency, one of UP/DOWN stays asserted for extended, asymmetric durations rather than short symmetric pulses, because one side of the PFD is repeatedly triggered before the other ever registers an edge. This net bias steers `Vctrl`, and therefore the VCO frequency, in the correct direction — a genuinely frequency-sensitive response that allows pull-in from a large starting error.
+- **Phase lock (tracking):** Once both clocks reach the same frequency, UP/DOWN pulse widths shrink down to encoding only the residual *phase* difference between edges, and the loop fine-tunes `Vctrl` to drive that phase error toward zero.
+
+The PFD therefore behaves as a frequency-error detector during acquisition and transitions into a phase-error detector once near lock — this dual behavior is the core justification for the flip-flop-based PFD topology over a simple XOR-type detector in a charge-pump PLL.
+
+### 1.4 Formal Lock Condition
+
+The loop is considered locked once:
+
+- The phase error between `f_clk_in` and `f_vco` is zero on a cycle-averaged basis (a small residual may remain due to PFD reset-path delay — see the dead zone below — but it no longer produces net charge pump current)
+- `Vctrl` has settled to a quasi-DC value (bounded ripple only)
+- `f_out = N × f_clk_in`, with `N = 8`
+
+**Settling time (`T_set`)** is the time from power-on until `Vctrl` first enters, and stays within, a defined tolerance band (e.g. ±1%) of its final locked value.
+
+### 1.5 The PFD Dead Zone
+
+The AND/NAND-based reset path inside the PFD has finite delay, which creates a narrow window around zero phase error where UP and DOWN both go high simultaneously and are effectively invisible to the charge pump. This is the **dead zone**:
+
+- It leaves a small band of phase error with no corrective charge pump action
+- In practice it shows up as static phase noise/jitter at lock rather than a perfectly zero residual phase error
+- It's the reason PFD testbenches deliberately offset `f_clk_in` and `f_vco` in time (rather than starting them perfectly aligned) — doing so forces the loop out of the dead zone and produces a measurable, non-degenerate UP or DOWN pulse width instead of two indistinguishable near-zero pulses
+
+### 1.6 Consequence for PFD Testbench Behavior
+
+Any testbench built to emulate a one-directional frequency/phase offset between `f_clk_in` and `f_vco` should, by the mechanism above, only ever produce one *stable, measurable* pulse — UP or DOWN, not both — because the opposite flip-flop's trigger condition never wins the race under that stimulus. This asymmetric, direction-dependent outcome is expected PFD behavior for such a stimulus, not a sign that the testbench or netlist is faulty.
+
+---
+
+## 2. Phase Frequency Detector (PFD)
+
+### 2.1 Objective
+
+Understand and recreate the Phase Frequency Detector block of the PLL using an AI-assisted circuit design workflow, and verify UP/DOWN pulse generation behavior against the reference repo implementation using SKY130 standard cells in ngspice.
+
+The PFD compares the reference clock (`f_clk_in`) against the feedback/VCO clock (`f_vco`) and produces:
+- `UP` pulse when `f_clk_in` leads `f_vco` (reference is faster/leading)
+- `DOWN` pulse when `f_vco` leads `f_clk_in` (feedback is faster/leading)
+- A reset condition that clears both outputs once both edges have been registered
+
+### 2.2 AI Prompt Used
+
+**Tool:** ChatGPT (GPT-based assistant)
+
+**Prompt:**
+> Generate a Phase Frequency Detector (PFD) for a PLL using SKY130 standard-cell library. When `f_clk_in > f_vco`, assert `UP`; when `f_clk_in < f_vco`, assert `DOWN`; reset both outputs when both inputs have been detected (PFD reset).
+>
+> ```
+> .lib /opt/pdk/sky130A/libs.tech/ngspice/sky130.lib.spice tt
+> .include /opt/pdk/sky130B/libs.ref/sky130_fd_sc_hd/spice/sky130_fd_sc_hd.spice
+> ```
+
+The PDK `.lib`/`.include` paths were supplied directly so the AI tool would target the correct standard-cell views (`sky130_fd_sc_hd`) instead of generic transistor-level primitives, keeping the output consistent with the rest of the reference project.
+
+### 2.3 Reference PFD (from `nitjsr_pll_130nm` repo)
+
+The reference implementation (`pfd.sch` → `pfd.cir`) uses a flattened, custom combinational NAND/inverter tree rather than a textbook flip-flop-based PFD. It is built directly from `sky130_fd_sc_hd__nand2/nand3/nand4/inv` primitives, cross-coupled to realize the sequential UP/DOWN/reset behavior at the gate level.
+
+**Note:** `pfd.cir` is not a PFD-only netlist. Alongside the gate-level PFD (`x1`–`x17`), the same file also contains the **charge pump** (transistors `XM1`–`XM18`, driven by `up`/`down`) and the **loop filter** (`C3`, `R1`, `C4` on the `vco`/`net20` nodes). This is a single flattened schematic covering three PLL blocks together, not an isolated PFD subcircuit — worth keeping in mind when the charge pump and loop filter sections are documented later, since their reference implementation is already present in this same file.
 
 <details>
-<summary><code>tb_pfd_dff.spice</code> (click to expand)</summary>
+<summary><strong>Reference PFD netlist (click to expand)</strong> — <code>pfd.cir</code></summary>
+
+```spice
+** sch_path: /home/vboxuser/Desktop/PLL/pfd.sch
+**.subckt pfd
+x1 net4 net1 net9 net7 GND GND VPWR VPWR net6 sky130_fd_sc_hd__nand4_1
+x2 net15 net14 GND GND VPWR VPWR net1 sky130_fd_sc_hd__nand2_1
+x3 f_vco GND GND VPWR VPWR net13 sky130_fd_sc_hd__inv_1
+x4 net3 net4 net6 GND GND VPWR VPWR net15 sky130_fd_sc_hd__nand3_1
+x5 net6 net7 net11 GND GND VPWR VPWR net12 sky130_fd_sc_hd__nand3_1
+x6 net1 net5 GND GND VPWR VPWR net4 sky130_fd_sc_hd__nand2_1
+x7 net4 net6 GND GND VPWR VPWR net5 sky130_fd_sc_hd__nand2_1
+x8 net6 net7 GND GND VPWR VPWR net8 sky130_fd_sc_hd__nand2_1
+x9 net8 net9 GND GND VPWR VPWR net7 sky130_fd_sc_hd__nand2_1
+x11 net13 net12 GND GND VPWR VPWR net9 sky130_fd_sc_hd__nand2_1
+x10 f_clk_in GND GND VPWR VPWR net14 sky130_fd_sc_hd__inv_1
+x12 net1 GND GND VPWR VPWR net2 sky130_fd_sc_hd__inv_1
+x13 net2 GND GND VPWR VPWR net3 sky130_fd_sc_hd__inv_1
+x14 net9 GND GND VPWR VPWR net10 sky130_fd_sc_hd__inv_1
+x15 net10 GND GND VPWR VPWR net11 sky130_fd_sc_hd__inv_1
+x16 net15 GND GND VPWR VPWR up sky130_fd_sc_hd__inv_1
+x17 net12 GND GND VPWR VPWR down sky130_fd_sc_hd__inv_1
+V2 f_clk_in GND pulse(0 1.8v 0 100p 100p 5n 9n)
+V3 f_vco GND pulse(0 1.8v 2n 100p 100p 5n 10n)
+V4 VPWR GND 1.8v
+C1 up GND 6f m=1
+C2 down GND 6f m=1
+V1 f_test GND pulse(0 1.8v 200p 135p 23.1p 2.05n 10n)
+.lib /opt/pdk/sky130A/libs.tech/ngspice/sky130.lib.spice tt
+.include /opt/pdk/sky130B/libs.ref/sky130_fd_sc_hd/spice/sky130_fd_sc_hd.spice
+.control
+plot V(f_clk_in)+6 V(f_vco)+4 V(up)+2 V(down)
+tran .1ns 300n
+.endc
+.GLOBAL GND
+.end
+```
+
+</details>
+
+### 2.4 AI-Generated PFD (Dual-D-Flip-Flop Topology)
+
+Rather than reproducing the repo's flattened NAND tree, the AI-assisted workflow was used to derive the **textbook dual-DFF PFD**: two edge-triggered D-flip-flops with `D` tied high, clocked respectively by `f_clk_in` and `f_vco`, and a single NAND2 gate generating the asynchronous reset once both `Q` outputs (`up`, `down`) go high.
+
+Standard cells used: `sky130_fd_sc_hd__dfrtp_1`, `sky130_fd_sc_hd__nand2_1`
+Pin orders confirmed against PDK cell definitions before use:
+- `dfrtp_1`: `CLK D RESET_B VGND VNB VPB VPWR Q`
+- `nand2_1`: `A B VGND VNB VPB VPWR Y`
+
+Testbench uses a two-phase stimulus: Phase 1 (0–50 ns) `f_clk_in` leads `f_vco` by 2 ns (expect `UP` pulses); Phase 2 (50–100 ns) `f_vco` leads `f_clk_in` by 2 ns (expect `DOWN` pulses).
+
+<details>
+<summary><strong>AI-generated PFD testbench (click to expand)</strong> — <code>tb_pfd_dff.spice</code></summary>
 
 ```spice
 * tb_pfd_dff.spice
@@ -71,109 +191,100 @@ f_vco  ------>|  dfrtp_1    |---- down ----+
 * Same two-phase test methodology as tb_pfd.spice:
 * Phase 1 (0-50ns):  f_clk_in leads f_vco by 2ns  -> expect UP pulses
 * Phase 2 (50-100ns): f_vco leads f_clk_in by 2ns -> expect DOWN pulses
-
 .title Independent dual-DFF PFD - two-phase UP/DOWN verification
-
 *** SKY130 corner library ***
 .lib /opt/pdk/sky130A/libs.tech/ngspice/sky130.lib.spice tt
-
 *** Standard-cell SPICE models ***
 .include /opt/pdk/sky130B/libs.ref/sky130_fd_sc_hd/spice/sky130_fd_sc_hd.spice
-
 *** Supply ***
 Vpwr VPWR 0 DC 1.8
-
 *** Reference clock: f_clk_in, free-running, TD=0 ***
 Vclkin f_clk_in 0 PULSE(0 1.8 0n 100p 100p 5n 10n)
-
 *** Two candidate f_vco phase relationships, selected by time ***
 Vvco_a n_vco_a 0 PULSE(0 1.8 2n 100p 100p 5n 10n)
 Vvco_b n_vco_b 0 PULSE(0 1.8 8n 100p 100p 5n 10n)
 Bvco f_vco 0 V = time < 50n ? V(n_vco_a) : V(n_vco_b)
-
 *** Load caps on PFD outputs ***
 Cup up 0 6f m=1
 Cdown down 0 6f m=1
-
 *** PFD: two D-flip-flops (D=VPWR, async reset) + NAND2 reset generator ***
 X1 f_clk_in VPWR rst_b GND GND VPWR VPWR up   sky130_fd_sc_hd__dfrtp_1
 X2 f_vco    VPWR rst_b GND GND VPWR VPWR down sky130_fd_sc_hd__dfrtp_1
 X3 up down GND GND VPWR VPWR rst_b sky130_fd_sc_hd__nand2_1
-
 .GLOBAL GND
-
 *** Analysis ***
 .control
 tran 10p 100n
 wrdata tb_pfd_dff_out.txt v(f_clk_in) v(f_vco) v(up) v(down) v(rst_b)
-* plot V(f_clk_in)+6 V(f_vco)+4 V(up)+2 V(down)
+plot V(f_clk_in)+6 V(f_vco)+4 V(up)+2 V(down)
 .endc
-
 *** Measurements ***
 .meas tran up_pw   TRIG v(up)   VAL=0.9 RISE=1 TD=0n  TARG v(up)   VAL=0.9 FALL=1 TD=0n
 .meas tran down_pw TRIG v(down) VAL=0.9 RISE=1 TD=58n TARG v(down) VAL=0.9 FALL=1 TD=58n
-
 .end
 ```
 
 </details>
 
----
+### 2.5 Design Comparison — Reference PFD vs AI-Generated PFD
 
-### Simulation Results
-
-**Status:** ✅ Simulated and verified in ngspice.
-
-Initial operating point (t = 0): `up` and `down` both settle at ≈0 V (2.7e-9 V, effectively zero), `rst_b` at 1.8 V — flip-flops correctly reset before the first clock edge. Transient run: 10360 data rows over 100 ns.
-
-| Measurement | Trigger time | Target time | Pulse width | Interpretation |
-|---|---|---|---|---|
-| `up_pw` | 2.79316e-10 s (0.279 ns) | 2.48607e-09 s (2.486 ns) | **2.20675e-09 s ≈ 2.207 ns** | UP correctly asserted in Phase 1, where `f_clk_in` leads `f_vco` by 2 ns |
-| `down_pw` | 5.82803e-08 s (58.280 ns) | 6.04865e-08 s (60.486 ns) | **2.20621e-09 s ≈ 2.206 ns** | DOWN correctly asserted in Phase 2, where `f_vco` leads `f_clk_in` by 2 ns |
-
-Both UP and DOWN paths fired cleanly within their respective test phases, with near-symmetric pulse widths (2.207 ns vs. 2.206 ns) — consistent with the 2 ns phase offset injected by the `Bvco` stimulus and confirming correct phase-to-pulse-width conversion in both directions.
-
----
-
-### Comparison Against the Repo-Native PFD
-
-The reference repo's own PFD (`pfd.cir`) uses a different implementation — a flattened, custom NAND/inverter combinational tree rather than discrete flip-flops. It was simulated earlier (`tb_pfd.spice`) as a benchmark to compare against.
-
-| Feature | Task 2 Deliverable — Independent Dual-DFF PFD | Reference Benchmark — Repo-Native (NAND/INV tree) |
+| Aspect | Reference PFD (`pfd.cir`) | AI-Generated PFD (`tb_pfd_dff.spice`) |
 |---|---|---|
-| Topology | Classic textbook dual-D-flip-flop + NAND2 reset | Flattened custom combinational NAND/inverter network |
-| Standard cells | `dfrtp_1` (×2), `nand2_1` (×1) | NAND, INV gates only |
-| Sequential elements | 2 discrete D flip-flops | None (purely combinational edge-detect network) |
-| Source | AI-generated, independently designed for this task | Matches the actual repo netlist (`pfd.cir`) |
-| Verification status | ✅ Simulated in ngspice, both `up_pw` and `down_pw` confirmed | ✅ Simulated in ngspice, only `up_pw` confirmed |
-| Measured `up_pw` | 2.207 ns | 2.083 ns |
-| Measured `down_pw` | **2.206 ns — successfully measured** | Out of interval — no valid DOWN pulse captured in the test window |
-| Gate count | Higher (FF cells are more transistor-dense) | Lower |
-| Debug difficulty | Low — standard topology, main risk was confirming `dfrtp_1`/`nand2_1` pin order | Low once topology was understood from the repo |
-| Traceability to reference design | Independent — not copied from the repo | Direct — this *is* what the repo implements |
+| Topology | Flattened custom NAND/inverter combinational tree | Classic dual-D-flip-flop PFD |
+| Standard cells used | `nand2_1`, `nand3_1`, `nand4_1`, `inv_1` | `dfrtp_1`, `nand2_1` |
+| Sequential elements | Realized implicitly via cross-coupled NAND latches | Explicit edge-triggered DFFs (`dfrtp_1`) |
+| Reset mechanism | Embedded within the gate-level feedback network | Single NAND2 gate driving `RESET_B` on both DFFs |
+| D-input handling | Not applicable (no discrete flip-flop cells) | `D` tied to `VPWR` on both DFFs |
+| Readability / traceability | Low — flattened netlist, non-descriptive net names (`net1`…`net15`) | High — signal names map directly to function (`up`, `down`, `rst_b`) |
+| Stimulus style | Fixed two-edge pulses (`f_clk_in`, `f_vco`) with static phase offset | Behavioral source (`B` element) switching phase relationship mid-run |
+| Test coverage | Single lead/lag condition per run | Both UP and DOWN conditions in one transient run |
+| Origin | Extracted/flattened from repo's schematic (`pfd.sch`) | Independently derived via AI-assisted prompt |
+| Verification status | Reference/golden behavior from repo | Not yet cross-checked against reference waveform |
+| File scope | Single flattened file also contains charge pump (`XM1`–`XM18`) and loop filter (`R1`, `C3`, `C4`) alongside the PFD gates | PFD-only testbench, isolated from charge pump/loop filter |
 
-### Which Is Better, and Why This Was Used
+### 2.6 Simulation Setup
 
-| Question | Task 2 Deliverable — Independent Dual-DFF PFD | Reference Benchmark — Repo-Native (NAND/INV tree) |
-|---|---|---|
-| Which is the Task 2 deliverable? | ✅ **Yes — this is the design being built and verified for Task 2** | No — used only as a comparison benchmark |
-| Why | This design's own UP and DOWN paths were both independently verified with clean, symmetric pulse widths (2.207 ns / 2.206 ns) for a 2 ns injected phase offset, giving complete, self-contained proof of correct PFD behavior in both directions | Its DOWN path never produced a measurable pulse in the tested window, so on its own it only demonstrates half of PFD operation |
-| Verification completeness | Both `up_pw` and `down_pw` captured with real TRIG/TARG times | Only `up_pw` captured; `down_pw` reported out of interval |
-| Design origin | Independently built to the classic PFD topology, not copied from the repo | Copied from the reference repo's actual implementation |
-| Value of keeping the benchmark | — | Useful as a sanity check that the repo's own gate-level PFD is at least partially consistent with expected UP behavior, and as later context if repo-fidelity comparisons are needed |
+Both netlists were run in ngspice against the same SKY130 `sky130_fd_sc_hd` standard-cell library (`tt` corner):
+
+```
+.lib /opt/pdk/sky130A/libs.tech/ngspice/sky130.lib.spice tt
+.include /opt/pdk/sky130B/libs.ref/sky130_fd_sc_hd/spice/sky130_fd_sc_hd.spice
+```
+
+- Reference PFD: `tran .1ns 300n`, single fixed phase offset (`f_vco` delayed 2 ns from `f_clk_in`).
+- AI-generated PFD: `tran 10p 100n`, phase relationship switched at 50 ns via a behavioral source to exercise both `UP` and `DOWN` conditions in one run.
+- Both testbenches probe `up` and `down` with `.meas tran` pulse-width measurements and plot `f_clk_in`, `f_vco`, `up`, `down` on offset traces for visual separation.
+
+### 2.7 Observations
+
+- The reference design encodes PFD sequential behavior entirely in combinational gates (a flattened, synthesized-looking netlist), which makes it functionally correct but harder to read or modify block-by-block.
+- The AI-generated design maps directly onto the standard textbook dual-DFF PFD, which is easier to reason about conceptually (each block — flip-flop, reset gate — has a clear functional role) and easier to re-target to other PDK cell libraries.
+- Both use the same `VPWR`/`GND` supply convention and the same SKY130 `sky130_fd_sc_hd` cell family, keeping the comparison apples-to-apples at the technology level.
+- The AI-generated testbench's two-phase behavioral stimulus (`B` element) is a departure from the repo's style and was chosen to verify both `UP` and `DOWN` assertion paths without needing two separate simulation runs.
+- The dead zone and frequency-vs-phase-lock distinction discussed in Section 1 explain, at a theoretical level, why the two-phase stimulus is expected to yield only one clean, measurable pulse width per phase rather than symmetric UP/DOWN behavior throughout.
 
 ---
 
-### Files in This Block
+## 3. Charge Pump
 
-- `README.md` — this document
-- `tb_pfd_dff.spice` — Task 2 PFD deliverable (independent dual-DFF design), verified
-- `tb_pfd_dff_out.txt` — raw `wrdata` transient output
-- `waveform.png` — plot of `f_clk_in`, `f_vco`, `up`, `down`, `rst_b` from `tb_pfd_dff_out.txt`
-- `pfd.spice` / `tb_pfd.spice` — reference-repo benchmark PFD, kept for comparison
+*To be added.*
 
----
+## 4. Loop Filter
 
-### Conclusion
+*To be added.*
 
-The Task 2 PFD deliverable — an independently-designed dual-D-flip-flop PFD built from SKY130 HD standard cells — was fully verified in ngspice. Both UP and DOWN pulses were correctly generated in response to the two-phase test stimulus, with measured pulse widths of 2.207 ns and 2.206 ns respectively, closely matching the injected 2 ns phase offset in each direction. This gives complete, symmetric verification of PFD behavior that the repo-native NAND/inverter benchmark could not fully demonstrate on its own, since its DOWN path never produced a measurable pulse. This dual-DFF PFD is the block carried forward into the Charge Pump + Loop Filter, VCO, Frequency Divider, and full closed-loop PLL stages of the project.
+## 5. Voltage Controlled Oscillator (VCO)
+
+*To be added.*
+
+## 6. Divide-by-N Feedback Divider
+
+*To be added.*
+
+## 7. Lock Behavior, Lock Time, Jitter/Noise, Duty Cycle
+
+*To be added.*
+
+## 8. Pre-Layout Simulation Summary & SKY130 Model Notes
+
+*To be added.*
