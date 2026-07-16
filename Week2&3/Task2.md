@@ -10,6 +10,18 @@ Task 2 is the design and independent verification of a gate-level Phase Frequenc
 
 ## Block 1: Phase Frequency Detector (PFD)
 
+Phase-Frequency Detector (PFD) — the front-end block of a PLL. It compares the edges of the reference clock (f_clk_in) against the feedback/VCO clock (f_vco) and produces two pulse outputs, up and down, whose pulse widths are proportional to the phase/frequency difference between the two clocks. These pulses later drive a charge pump + loop filter to steer the VCO.
+Unlike a simple two-D-flip-flop PFD, this design is built entirely from NAND gates and inverters (no explicit DFF primitive). Each channel (reference and feedback) forms an edge-triggered latch out of cross-coupled NAND gates (X6/X7 for the top channel, X8/X9 for the bottom), and:
+
+X10 / X3 invert the incoming clocks (f_clk_in, f_vco).
+X2 / X11 are the "set" NAND gates for each channel's latch, clocked by the rising edge of each input.
+X6/X7 and X8/X9 form the storage (memory) elements of each channel — functionally replacing the two D-flip-flops of a conventional PFD.
+X12/X13 and X14/X15 are delay-buffer chains (two inverters = one buffer delay) that shape the timing of the NAND3 combination stage and help avoid a dead zone.
+X1 (NAND4) combines internal state nodes from both channels — this is the reset generator. When both channels have triggered (i.e., both up and down conditions are met simultaneously), X1's output resets both latches, which is what keeps the PFD's dead zone minimized.
+X4 (NAND3) and X5 (NAND3) merge the delayed edge, latch state, and the common reset signal from X1 to produce the raw (active-low) up/down pulses.
+X16 / X17 are final inverters that convert those internal active-low pulses into the clean, active-high up and down outputs (each loaded with a small 6 fF cap, C1/C2, representing wiring/gate load).
+
+Net result: if f_clk_in leads f_vco in phase, up pulses wider than down; if f_vco leads, down pulses wider; if they're in phase, both output very narrow (ideally zero) pulses.
 ### Objective
 
 Design and verify a gate-level Phase Frequency Detector for the PLL using the SKY130 HD standard-cell library, built from two D-flip-flops and a NAND2 asynchronous reset gate. This is the primary PFD deliverable for Task 2.
