@@ -13,15 +13,14 @@ Continuing from the reference repo, Week 2 & 3 focus only on the **circuit desig
 | 1 | PLL basics / phase-frequency locking concept | ✅ Complete |
 | 2 | Reference clock vs feedback clock relation | ✅ Complete |
 | 3 | **Phase Frequency Detector (PFD)** — UP/DOWN pulse generation | ✅ Complete |
-| 4 | Charge pump — source/sink current behavior | Pending |
-| 5 | Loop filter — control-voltage generation | Pending |
-| 6 | VCO — tuning and frequency sweep | Pending |
-| 7 | Divide-by-N feedback divider | Pending |
-| 8 | Lock behavior / lock time | Pending |
-| 9 | Jitter / noise awareness | Pending |
-| 10 | Duty-cycle observation | Pending |
-| 11 | Pre-layout SPICE simulation summary | Pending |
-| 12 | SKY130 device/model usage notes | Pending |
+| 4 | Charge pump — source/sink current behavior | Loop filter — control-voltage generation| ✅ Complete |
+| 5 | VCO — tuning and frequency sweep | Pending |
+| 6 | Divide-by-N feedback divider | Pending |
+| 7 | Lock behavior / lock time | Pending |
+| 8 | Jitter / noise awareness | Pending |
+| 9 | Duty-cycle observation | Pending |
+| 10 | Pre-layout SPICE simulation summary | Pending |
+| 11 | SKY130 device/model usage notes | Pending |
 
 Sections below are filled in as each block is completed.
 
@@ -265,13 +264,162 @@ Both netlists were run in ngspice against the same SKY130 `sky130_fd_sc_hd` stan
 
 ---
 
-## 3. Charge Pump
+## 3. Charge Pump and Loop Filter
 
-*To be added.*
+# ⚡ Charge Pump + Loop Filter (CP+LF)
 
-## 4. Loop Filter
+> Block 2 of 5 — PLL block-level simulation series
+> Continuation of Week 1 report, Section III.B/III.C
 
-*To be added.*
+## Overview
+
+The CP+LF stage turns the PFD's `UP`/`DOWN` pulses into a control voltage
+for the VCO. Charge is pushed onto `vctrl` when `UP` fires, pulled off when
+`DOWN` fires — the loop filter smooths that into a usable DC level.
+
+Two versions of this netlist exist:
+
+| | 📂 Repo Reference | 🤖 AI-Generated |
+|---|---|---|
+| **Origin** | `himansh107/nitjsr_pll_130nm` | Prompted: *"Act as an analog IC engineer. Generate a SKY130 ngspice netlist for a PLL charge pump with a second-order passive loop filter... UP and DOWN controlled PMOS/NMOS switching paths, dummy devices for charge injection reduction..."* |
+| **Switches** | Single PMOS (M4, W=45) / NMOS (M3, W=15) | Cascoded PMOS/NMOS pairs |
+| **Charge injection handling** | None | Dummy/replica legs on both sides |
+| **C1 / C2** | 500p / 100p | 100p / 200p |
+| **R1** | 1.5k | 1.5k |
+| **Status** | ✅ Simulated & verified | ✅ Simulated & verified |
+
+The AI-generated design closely follows the repository's overall
+architecture (PMOS source path, NMOS sink path, passive 2nd-order loop
+filter) while adding cascoded switches and dummy/replica legs for
+charge-injection cancellation not present in the repo version.
+
+<details>
+<summary>🔍 How the circuit works</summary>
+
+**Output stage (the actual charge pump)**
+The main charge/discharge branch connects to `vctrl`:
+- **PMOS branch**: when driven low, connects VDD to the output, sourcing current into the loop filter and raising `vctrl`.
+- **NMOS branch**: when driven high, connects the output to GND, sinking current and lowering `vctrl`.
+
+**Input/control logic (UP / DOWN networks)**
+Two symmetric paths process the digital inputs independently:
+- **UP path**: generates complementary signals (`up_bar`, `up_bar2`) through inverter/transmission-gate stages, driving the PMOS switches. Complementary drive helps cancel clock feedthrough and charge injection.
+- **DOWN path**: identical structure, mirrored, driving the NMOS switches.
+
+**Loop filter (2nd-order passive low-pass)**
+- **C2** — suppresses high-frequency ripple from the switching.
+- **R1 in series with C1** — creates a stabilizing zero, adding phase margin so the loop doesn't oscillate.
+
+**Behavior summary**
+- `UP` high → PMOS sources current → `vctrl` rises → VCO sped up.
+- `DOWN` high → NMOS sinks current → `vctrl` falls → VCO slowed down.
+- Both low (locked) → output tri-states, loop filter holds charge, `vctrl` steady.
+
+</details>
+
+<details>
+<summary>📄 Full SPICE netlist (AI-generated)</summary>
+
+```spice
+.param VDD_VAL = 1.8
+
+.lib /opt/pdk/sky130A/libs.tech/ngspice/sky130.lib.spice tt
+
+.subckt CHARGE_PUMP UP DOWN CP VDD GND
+
+XM14 up_bar UP VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+XM7  up_bar UP GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+
+XM21 up_bar2 up_bar VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+XM15 up_bar2 up_bar GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+
+XM26 np1 up_bar  VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=45   nf=1
+XM25 CP  up_bar  np1 VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+
+XM24 np2 up_bar2 VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+XM23 vdummy_p up_bar2 np2 VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+
+XM12 down_bar DOWN VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+XM8  down_bar DOWN GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+
+XM22 down_bar2 down_bar VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+XM16 down_bar2 down_bar GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+
+XM20 nn1 down_bar2 GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=15   nf=1
+XM19 CP  down_bar2 nn1 GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+
+XM18 nn2 down_bar  GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+XM17 vdummy_n down_bar nn2 GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+
+.ends CHARGE_PUMP
+
+.subckt CP_LF UP DOWN CTRL VDD GND
+XCP UP DOWN CP VDD GND CHARGE_PUMP
+C1  CP   GND  100p
+R1  CP   CTRL 1.5k
+C2  CTRL GND  200p
+.ends CP_LF
+
+Vdd  VDD  0  DC {VDD_VAL}
+
+Vup_u   up_u   0  PULSE(0 {VDD_VAL} 5n 5p 5p 10n 20n)
+Vdn_u   down_u 0  DC 0
+XCPLF_U up_u down_u vctrl_u VDD 0 CP_LF
+
+Vup_d   up_d   0  DC 0
+Vdn_d   down_d 0  PULSE(0 {VDD_VAL} 5n 5p 5p 10n 20n)
+XCPLF_D up_d down_d vctrl_d VDD 0 CP_LF
+
+.tran 10p 700n
+.control
+run
+plot v(up_u) v(vctrl_u)
+plot v(down_d) v(vctrl_d)
+meas tran v_ctrl_u_end find v(vctrl_u) at=700n
+meas tran v_ctrl_d_end find v(vctrl_d) at=700n
+.endc
+.end
+```
+
+</details>
+
+> ⚠️ **Repo limitation, confirmed directly**: the repo's shipped
+> `pre layout/cp+lf.cir` contains **no `.plot`, `.meas`, or `.control`
+> statements at all**. Running it exactly as provided produces a raw
+> transient solution with no printed measurements and no waveform — the
+> repo's schematic/result images showing expected behavior were not
+> generated by executing that file as shipped. Getting any comparable
+> output from the repo netlist requires adding the same kind of
+> instrumentation (`wrdata`/`.meas`) done for the Repo Reference column
+> above.
+
+## Measured Results
+
+Only numbers from netlists that were actually run in ngspice appear here.
+
+**Repo Reference** *(single-pulse `vctrl` delta, sampled at pulse edge)*
+
+| | UP path | DOWN path |
+|---|---|---|
+| Pulse width | 2.129 ns | 2.129 ns |
+| `vctrl` delta | +1.48 mV | −2.82 mV |
+
+**AI-Generated `CP_LF`** *(700 ns continuous run, both instances start at 1.043 V)*
+
+| | UP path | DOWN path |
+|---|---|---|
+| `vctrl` at end of run | 1.108 V | 0.920 V |
+| Net movement | +64.7 mV | −123.3 mV |
+
+![CP_LF verified waveform: UP-path charging (left) and DOWN-path discharging (right)](cp_lf_waveform.png)
+*ngspice output — left: `v(up_u)` and `v(vctrl_u)` ramping up; right: `v(down_d)` and `v(vctrl_d)` ramping down. Matches the table above.*
+
+Both designs push `vctrl` in the right direction for each input, but the
+DOWN path consistently moves it about **1.9× harder** than the UP path in
+both datasets — a source/sink mismatch worth tracking as the design
+matures.
+
+
 
 ## 5. Voltage Controlled Oscillator (VCO)
 
