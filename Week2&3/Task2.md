@@ -411,7 +411,9 @@ Only numbers from netlists that were actually run in ngspice appear here.
 | `vctrl` at end of run | 1.108 V | 0.920 V |
 | Net movement | +64.7 mV | −123.3 mV |
 
-![CP_LF verified waveform: UP-path charging (left) and DOWN-path discharging (right)](cp_lf_waveform.png)
+<img width="1281" height="530" alt="Screenshot 2026-07-17 at 2 36 35 pm" src="https://github.com/user-attachments/assets/e498fdea-9e41-4472-abe6-3ebe6efcbc2f" />
+
+
 *ngspice output — left: `v(up_u)` and `v(vctrl_u)` ramping up; right: `v(down_d)` and `v(vctrl_d)` ramping down. Matches the table above.*
 
 Both designs push `vctrl` in the right direction for each input, but the
