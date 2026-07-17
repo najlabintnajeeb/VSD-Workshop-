@@ -286,7 +286,7 @@ Two versions of this netlist exist:
 | **Charge injection handling** | None | Dummy/replica legs on both sides |
 | **C1 / C2** | 500p / 100p | 100p / 200p |
 | **R1** | 1.5k | 1.5k |
-| **Status** | ✅ Simulated & verified | ✅ Simulated & verified |
+| **Status** |  | <img width="500" height="330" alt="Screenshot 2026-07-17 at 2 36 35 pm" src="https://github.com/user-attachments/assets/7fb86460-97e6-4526-b4ac-85e785297175" /> |
 
 The AI-generated design closely follows the repository's overall
 architecture (PMOS source path, NMOS sink path, passive 2nd-order loop
@@ -397,12 +397,14 @@ meas tran v_ctrl_d_end find v(vctrl_d) at=700n
 
 Only numbers from netlists that were actually run in ngspice appear here.
 
-**Repo Reference** *(single-pulse `vctrl` delta, sampled at pulse edge)*
+**Repo Reference** *(single-pulse `vctrl` delta, sampled right at the pulse edge, `AT=2.41n`)*
 
 | | UP path | DOWN path |
 |---|---|---|
 | Pulse width | 2.129 ns | 2.129 ns |
-| `vctrl` delta | +1.48 mV | −2.82 mV |
+| `vctrl` delta | +1.084 mV | −2.676 mV |
+| **Mismatch ratio (DOWN/UP)** | | **2.47×** |
+
 
 **AI-Generated `CP_LF`** *(700 ns continuous run, both instances start at 1.043 V)*
 
@@ -411,30 +413,21 @@ Only numbers from netlists that were actually run in ngspice appear here.
 | `vctrl` at end of run | 1.108 V | 0.920 V |
 | Net movement | +64.7 mV | −123.3 mV |
 
-<img width="1281" height="530" alt="Screenshot 2026-07-17 at 2 36 35 pm" src="https://github.com/user-attachments/assets/e498fdea-9e41-4472-abe6-3ebe6efcbc2f" />
-
+<img width="1281" height="530" alt="Screenshot 2026-07-17 at 2 36 35 pm" src="https://github.com/user-attachments/assets/fc74c090-fafe-4070-b206-5c11ae145e1a" />
 
 *ngspice output — left: `v(up_u)` and `v(vctrl_u)` ramping up; right: `v(down_d)` and `v(vctrl_d)` ramping down. Matches the table above.*
 
-Both designs push `vctrl` in the right direction for each input, but the
-DOWN path consistently moves it about **1.9× harder** than the UP path in
-both datasets — a source/sink mismatch worth tracking as the design
-matures.
+Both designs push `vctrl` in the right direction for each input. The
+Repo Reference shows a **2.47×** DOWN/UP mismatch (corrected, edge-aligned
+single-pulse measurement); the AI-Generated design shows a **1.9×**
+mismatch (continuous-run measurement). Both point the same direction —
+sink stronger than source — but see the methodology note below before
+comparing the two ratios directly.
 
-
-
-## 5. Voltage Controlled Oscillator (VCO)
-
-*To be added.*
-
-## 6. Divide-by-N Feedback Divider
-
-*To be added.*
-
-## 7. Lock Behavior, Lock Time, Jitter/Noise, Duty Cycle
-
-*To be added.*
-
-## 8. Pre-Layout Simulation Summary & SKY130 Model Notes
-
-*To be added.*
+> **Note on methodology:** the AI-Generated numbers come from a *continuous*
+> 700 ns run (many pulses, cumulative drift). The Repo Reference numbers
+> come from a *single-pulse* delta (one pump event, sampled at the edge).
+> These measure different things — cumulative drift vs. one-shot charge
+> injection — so the 2.47× (Repo) and 1.9× (AI-Generated) ratios are each
+> valid on their own but not a strict magnitude comparison against each
+> other.
