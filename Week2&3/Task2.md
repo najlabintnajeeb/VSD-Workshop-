@@ -15,7 +15,7 @@ Continuing from the reference repo, Week 2 & 3 focus only on the **circuit desig
 | 3 | **Phase Frequency Detector (PFD)** — UP/DOWN pulse generation | ✅ Complete |
 | 4 | Charge pump — source/sink current behavior | Loop filter — control-voltage generation| ✅ Complete |
 | 5 | VCO — tuning and frequency sweep | Pending |
-| 6 | Divide-by-N feedback divider | Pending |
+| 6 | Divide-by-N feedback divider | ✅ Complete |
 | 7 | Lock behavior / lock time | Pending |
 | 8 | Jitter / noise awareness | Pending |
 | 9 | Duty-cycle observation | Pending |
@@ -435,9 +435,6 @@ comparing the two ratios directly.
 
 ## Block: Frequency Divider (÷8) — FD
 
-**Status:** Simulation run in ngspice. Output waveform obtained (v(clk1), v(f_out)).
-Naj to independently verify exact period/frequency values from data before final numbers are quoted anywhere.
-
 ### AI Prompt Used
 > Generate a SPICE netlist for a ÷8 frequency divider for a PLL feedback path, in SKY130,
 > matching the attached schematic (`f/2 ckt`, a single ÷2 stage built from `pfet_01v8`/`nfet_01v8`
@@ -445,11 +442,53 @@ Naj to independently verify exact period/frequency values from data before final
 > primitive subckt names (`sky130_fd_pr__pfet_01v8`, `sky130_fd_pr__nfet_01v8`), not bare
 > xschem symbol names.
 
-### Topology
-Three cascaded static transmission-gate master-slave toggle latches (`fd` subckt), each dividing
-by 2, chained together for an overall ÷8. Each stage generates a local `clk_b` and uses four
-transmission gates (TG1–TG4) gating two back-to-back inverter latches — a standard TFF-via-TG
-construction, consistent with the dual-flip-flop / T-FF description in the Week 1 report.
+
+<details><summary### Topology></summary>
+        The design is realized by configuring a Master-Slave D-Flip-Flop (DFF) in a negative feedback loop, where the complementary output is routed back to the data input. This configuration causes the circuit to toggle its state on every active clock edge, dividing the input frequency exactly by two.
+
+---
+
+## Core Architecture & Signal Flow
+
+The architecture is built using three primary functional blocks:
+
+### 1. Clock Inverter Stage
+* **Components:** Inverter pair (`M13` / `M14`).
+* **Operation:** Takes the primary clock signal (`clk`) and generates its complementary phase (`clk_b`). These dual-phase clock signals drive the transmission gates across the circuit to coordinate synchronization and data isolation.
+
+### 2. Master Latch Stage
+* **Input Switch (`M3` / `M4`):** A transmission gate gated by `clk` and `clk_b`. It conducts when `clk` is **Low**, sampling the inverted feedback signal from `q_b`.
+* **Forward Inverter (`M1` / `M2`):** Drives the sampled input state into the master storage node.
+* **Feedback Storage Loop (`M7` / `M8` & `M5` / `M6`):** When `clk` transitions to **High**, the transmission gate (`M7` / `M8`) becomes active, completing the cross-coupled inverter loop to latch and stabilize the sampled state.
+
+### 3. Slave Latch Stage
+* **Intermediate Switch (`M9` / `M10`):** A transmission gate configured to operate in the opposite phase of the input switch. It conducts when `clk` is **High**, allowing the latched state from the Master stage to propagate forward.
+* **Output Buffering (`M11` / `M12` & `M15` / `M16`):** Consecutive inverter stages condition and buffer the node voltages to output the true signal (`q`) and the complementary signal (`q_b`).
+* **Slave Storage Loop (`M17` / `M18`):** When `clk` transitions to **Low**, this transmission gate activates, locking the current state of the output nodes while the Master stage opens up to capture the next state.
+
+---
+
+## Working Principle & Frequency Division
+
+The frequency division is achieved via a multi-phase isolation cycle between the Master and Slave latches:
+
+| Clock State (`clk`) | Master Latch Mode | Slave Latch Mode | Action |
+| :--- | :--- | :--- | :--- |
+| **Low** | **Sampling** (Open) | **Hold** (Locked) | Master samples the current value of `q_b`. Slave holds the previous state at the outputs. |
+| **High** | **Hold** (Locked) | **Evaluation** (Open) | Master locks the sampled value. Slave opens to let this state propagate to `q` and `q_b`. |
+
+### Mathematical Relation
+Because the complementary output `q_b` is continuously fed back to the input, the circuit updates to the opposite logic state on every full clock cycle. It requires **two full periods of the input clock** for the output waveform to complete a single full period (High and Low state). 
+
+Consequently, the output clock frequency ($f_{out}$) is exactly half of the input clock frequency ($f_{in}$):
+
+$$f_{out} = \frac{f_{in}}{2}$$
+
+## Transistor Sizing and Technology Notes
+* **Process Variant:** `pfet_01v8` and `nfet_01v8` (1.8V standard CMOS process).
+* **Device Sizing:**
+  * PMOS Transistors (`M1`, `M6`, `M12`, `M16`, `M14`): Optimized with $W/L = 2.5\,\mu\text{m} / 0.15\,\mu\text{m}$ to compensate for lower hole mobility.
+  * NMOS Transistors (`M2`, `M5`, `M11`, `M15`, `M13`): Configured with $W/L = 1\,\mu\text{m} / 0.15\,\mu\text{m}$ for balanced propagation delay and symmetric rise/fall times.</details>
 
 ### Errors Encountered & Fixes
 
