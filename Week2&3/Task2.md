@@ -579,8 +579,13 @@ The initial AI-generated netlist ran 4–6× faster than the reference at matche
 **Which body connection was used:** the extracted reference netlist connects the PMOS body to `Vp`, whereas conventional SKY130 body connection ties PMOS bodies to the n-well supply (`VDD`). This project therefore retains the `VDD`-body version as the implementation target while using the extracted `Vp`-body version only for numerical comparison against the reference simulations.
 
 ### Waveform Comparison
+v(OSC)` transient plots, `Vctrl = 0.7V` and `Vctrl = 0.8V`, for the standard body=VDD netlist vs. the body=Vp (reference-matching) netlist,
 
-*[Insert: `v(OSC)` transient plots, `Vctrl = 0.7V` and `Vctrl = 0.8V`, for the standard body=VDD netlist vs. the body=Vp (reference-matching) netlist, side by side or overlaid, to visually confirm the frequency divergence documented in the convergence table above.]*
+
+<img width="1004" height="561" alt="Screenshot 2026-07-18 at 1 41 15 pm" src="https://github.com/user-attachments/assets/b113f0f5-c5dc-4cdb-b367-bd0db53c6c77" />
+
+<img width="1278" height="538" alt="Screenshot 2026-07-18 at 3 08 37 pm" src="https://github.com/user-attachments/assets/c31712e7-6686-4681-8577-b71a6078cffd" />
+
 
 ### Simulation Results
 
