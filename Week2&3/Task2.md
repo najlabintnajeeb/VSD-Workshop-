@@ -4,7 +4,7 @@ Reference repo: [`nitjsr_pll_130nm`](https://github.com/himansh107/nitjsr_pll_13
 
 ## Objective
 
-Continuing from the reference repo, Week 2 & 3 focus only on the **circuit design side** of the SKY130-based on-chip clock-multiplier PLL — not final layout, GDS, tapeout packaging, or full repo reproduction. The goal is to understand and recreate each PLL building block step by step using AI-assisted prompts (ChatGPT/Codex or similar), verify behavior in ngspice/xschem with SKY130 models where possible, and document prompts, tools, generated netlists, simulation attempts, errors/fixes, and observations for each block.
+Continuing from the reference repo, Week 2 & 3 focus  on the **circuit design side** of the SKY130-based on-chip clock-multiplier PLL . The goal is to understand and recreate each PLL building block step by step using AI-assisted prompts (ChatGPT/Codex or similar), verify behavior in ngspice/xschem with SKY130 models where possible, and document prompts, tools, generated netlists, simulation attempts, errors/fixes, and observations for each block.
 
 ## Scope — Blocks Covered
 
@@ -554,20 +554,13 @@ Fixed dual-bias-point transient testbench: `vctrl` swept between 0.7 V and 0.8 V
 
 ### AI-Generated vs. Reference Netlist Comparison
 
-Reference topology extracted/isolated from the `nitjsr_pll_130nm` repository's `vco.sch`/`cs_inv.sch` netlist export and compared device-by-device against the AI-generated netlist.
+Reference topology extracted/isolated from the `nitjsr_pll_130nm` repository's `vco.sch`/`cs_inv.sch` netlist export and compared device-by-device against the AI-generated netlist. `cs_inv` stage sizing, bias mirror NMOS, output buffer sizing, and ring stage count/topology were identical between the two and are not listed below — only the differences are.
 
-| Element | Reference | AI-generated (initial) | Match? |
-|---|---|---|---|
-| `cs_inv` inverter PMOS | W=0.72, L=0.18 | W=0.72, L=0.18 | ✅ |
-| `cs_inv` inverter NMOS | W=0.36, L=0.18 | W=0.36, L=0.18 | ✅ |
-| `cs_inv` starve PMOS | W=0.72, L=0.18 | W=0.72, L=0.18 | ✅ |
-| `cs_inv` starve NMOS | W=0.36, L=0.18 | W=0.36, L=0.18 | ✅ |
-| Bias mirror NMOS | W=0.36, L=0.18 | W=0.36, L=0.18 | ✅ |
-| Bias diode-connected PMOS width | W=1.8 | W=1.08 | ❌ |
-| Bias diode-connected PMOS body | tied to `Vp` | tied to `VDD` | ❌ |
-| Junction parasitics (`ad/as/pd/ps/nrd/nrs`) | explicit, on every device | absent | ❌ |
-| Output buffer PMOS/NMOS sizing | W=0.72 / W=0.36 | W=0.72 / W=0.36 | ✅ |
-| Ring stage count / topology | 7 stages, closed loop | 7 stages, closed loop | ✅ (node labels differ only) |
+| Element | Reference | AI-generated (initial) |
+|---|---|---|
+| Bias diode-connected PMOS width | W=1.8 | W=1.08 |
+| Bias diode-connected PMOS body | tied to `Vp` | tied to `VDD` |
+| Junction parasitics (`ad/as/pd/ps/nrd/nrs`) | explicit, on every device | absent |
 
 ### Convergence Debugging: Isolating the Frequency Gap
 
@@ -581,9 +574,9 @@ The initial AI-generated netlist ran 4–6× faster than the reference at matche
 | + body tie VDD→Vp (width 1.8) | 3.09 MHz | 8.06 MHz | 14–20% low |
 | + junction parasitics on all 12 devices (width 1.8, body Vp) | **3.591 MHz** | **10.00 MHz** | **<0.2%** |
 
-**Why the body tie dominated:** the diode-connected bias PMOS's body terminal sets the device's effective threshold voltage via the body effect. Tying it to `Vp` (its own drain/gate) instead of `VDD` forward-biases the source-body junction, shifting the device into a different operating region entirely — not just scaling its current capacity the way a width change does. Because this single node (`Vp`) gates the starve PMOS in all 7 ring stages simultaneously, a large shift there is amplified across the whole ring, explaining why it accounted for the majority of the frequency gap while the width change alone was negligible.
+**Why the body tie dominated:** tying the PMOS body to `Vp` rather than the n-well supply (`VDD`) changes the body-source voltage, modifying the device threshold through the body effect. Because this bias node controls all seven current-starving PMOS devices, even a modest shift in the generated bias current propagates throughout the ring oscillator, producing a large change in oscillation frequency — this is why it accounted for the majority of the frequency gap while the width change alone was negligible.
 
-**Which body connection is correct:** `VDD` is the standard, electrically correct choice. Tying a PMOS body to a node that sits below its source (here, `Vp` measured 0.95–1.25 V against a 1.8 V source) forward-biases the source-body junction diode, causing leakage current into the n-well and elevated latch-up risk — the kind of connection that would fail well-tap/antenna DRC checks in a real layout. The reference repo's `Vp`-tied body is best treated as a likely modeling artifact in its schematic rather than an intentional design choice. Reproducing it was necessary only to numerically match the reference's *reported* frequency — it is not being adopted as the corrected/final version of this block. The standard-compliant `VDD`-tied netlist remains the version this project treats as correct; the `Vp`-tied variant exists solely as a validation/comparison data point against the reference.
+**Which body connection was used:** the extracted reference netlist connects the PMOS body to `Vp`, whereas conventional SKY130 body connection ties PMOS bodies to the n-well supply (`VDD`). This project therefore retains the `VDD`-body version as the implementation target while using the extracted `Vp`-body version only for numerical comparison against the reference simulations.
 
 ### Waveform Comparison
 
