@@ -515,3 +515,86 @@ at high density and `f_out` producing a lower-frequency output consistent with a
 **Exact period/frequency values and duty cycle to be measured independently from the output data
 (via `.meas` or the plotted trace) before being recorded as verified results — none are asserted here.**
 
+## Block 4: Voltage-Controlled Oscillator (VCO)
+
+7-stage current-starved ring oscillator. Bias stage sets `Vp`/`Vn` from `vctrl`, distributing starve current to seven cascaded current-starved inverter stages, followed by a discrete CMOS output buffer.
+
+<details>
+<summary>Circuit description</summary>
+
+- **Biasing network**: `vctrl` gates an NMOS current-setting device; a diode-connected PMOS mirrors this current to generate `Vp`. `Vn` tracks `vctrl` directly.
+- **Delay cell core**: each of the 7 stages is a current-starved inverter — a standard PMOS/NMOS inverter pair flanked by starve transistors (PMOS gated by `Vp`, NMOS gated by `Vn`) that limit charge/discharge current into the stage's output capacitance.
+- **Ring configuration**: 7 (odd) stages closed in a loop produce a self-sustained oscillation.
+- **Output buffer**: a discrete CMOS inverter isolates the ring from output loading and sharpens the edges into a clean square wave at `OSC`.
+
+</details>
+
+### AI-Assisted Prompt
+
+<details>
+<summary>Prompt used for netlist generation</summary>
+
+> Act as an analog IC engineer. Generate a complete ngspice netlist for a 7-stage current-starved ring VCO using the SKY130 PDK. Use `sky130.lib.spice tt` and `sky130_fd_sc_hd.spice`. Implement a current-starved inverter subcircuit, bias stage controlled by `vctrl`, 7-stage ring oscillator, output buffer, 1.8 V supply, transient testbench, `.control` block, and simulate at `vctrl = 0.7 V` and `0.8 V` to compare output frequency.
+
+</details>
+
+### Testbench
+
+Fixed dual-bias-point transient testbench: `vctrl` swept between 0.7 V and 0.8 V via `alter`, 5.5 µs transient per run, `.meas trig/targ` on `v(OSC)` (rise=3 to rise=4, `val=0.9`) to extract steady-state period and frequency at each point.
+
+### Errors and Fixes
+
+| Error Log / Message | Root Cause | Fix Implemented |
+|---|---|---|
+| `Fatal error: instance v_gnd is a shorted VSRC`<br>`doAnalyses: operation not supported` | A standalone voltage source (`V_GND`) was connected between the `GND` node and the global reference node `0`. Since the SKY130 PDK library configuration already shorts/aliases `GND` to `0`, this created a redundant 0V loop, crashing the parser. | Removed the `V_GND GND 0 DC 0` line. Mapped the DUT's ground pin directly to native ngspice reference node `0`. |
+| `Error: no such vector osc`<br>`Warning from checkvalid: vector OSC is not available or has zero length.` | The fatal topology error aborted the transient analysis before any node data was generated, so the `OSC` vector never existed to plot. | Resolved automatically once the shorted voltage source was removed and the transient ran to completion. |
+| `Error: measure t1_0p7 trig(TRIG) : out of interval`<br>`meas tran t1_0p7 [...] failed!` | The measurement targeted the 100th rising edge (`rise=100`) of `OSC`. At `Vctrl = 0.7V` the VCO completes only ~15 cycles within the 5.5 µs window, so the 100th edge never occurs. | Changed measurement edges to `rise=3`/`rise=4` for both runs, well within the simulation window at either bias point. |
+| Missing `uic` on `tran` statements — no fatal error, but a latent risk | Without `uic`, ngspice computes its own DC operating point before the transient starts. A symmetric current-starved ring has a stable non-oscillating DC solution; the OP solver could converge there and silently discard the `.ic` startup asymmetry. | Added `uic` to both `tran` calls so `.ic v(n1)=0 v(n2)=1.8 v(n3)=0` is used directly as the t=0 condition instead of just seeding the OP solve. Confirmed via log line `Operating point simulation skipped by 'uic', now using transient initial conditions.` |
+| Missing `mult=1` on all `sky130_fd_pr__*` device instances | Omitted from the initial AI-generated netlist; project convention requires explicit `mult=1` to avoid BSIM4 parameter substitution failures. | Added `mult=1` to all 8 primitive device instances (4 in `cs_inv`, 2 in bias stage, 2 in output buffer). |
+
+### AI-Generated vs. Reference Netlist Comparison
+
+Reference topology extracted/isolated from the `nitjsr_pll_130nm` repository's `vco.sch`/`cs_inv.sch` netlist export and compared device-by-device against the AI-generated netlist.
+
+| Element | Reference | AI-generated (initial) | Match? |
+|---|---|---|---|
+| `cs_inv` inverter PMOS | W=0.72, L=0.18 | W=0.72, L=0.18 | ✅ |
+| `cs_inv` inverter NMOS | W=0.36, L=0.18 | W=0.36, L=0.18 | ✅ |
+| `cs_inv` starve PMOS | W=0.72, L=0.18 | W=0.72, L=0.18 | ✅ |
+| `cs_inv` starve NMOS | W=0.36, L=0.18 | W=0.36, L=0.18 | ✅ |
+| Bias mirror NMOS | W=0.36, L=0.18 | W=0.36, L=0.18 | ✅ |
+| Bias diode-connected PMOS width | W=1.8 | W=1.08 | ❌ |
+| Bias diode-connected PMOS body | tied to `Vp` | tied to `VDD` | ❌ |
+| Junction parasitics (`ad/as/pd/ps/nrd/nrs`) | explicit, on every device | absent | ❌ |
+| Output buffer PMOS/NMOS sizing | W=0.72 / W=0.36 | W=0.72 / W=0.36 | ✅ |
+| Ring stage count / topology | 7 stages, closed loop | 7 stages, closed loop | ✅ (node labels differ only) |
+
+### Convergence Debugging: Isolating the Frequency Gap
+
+The initial AI-generated netlist ran 4–6× faster than the reference at matched `vctrl` points. Each identified difference was changed one at a time (except the final step, which combines two) to isolate its individual contribution.
+
+| Variant | `Vctrl=0.7V` freq | `Vctrl=0.8V` freq | Gap vs. reference |
+|---|---|---|---|
+| Reference repo | 3.591 MHz | 10.02 MHz | — |
+| AI-generated, initial | 15.40 MHz | 62.50 MHz | 4.3×–6.2× |
+| + bias PMOS width 1.08→1.8 (body still VDD) | — | 62.50 MHz | ~0.0003% shift — negligible |
+| + body tie VDD→Vp (width 1.8) | 3.09 MHz | 8.06 MHz | 14–20% low |
+| + junction parasitics on all 12 devices (width 1.8, body Vp) | **3.591 MHz** | **10.00 MHz** | **<0.2%** |
+
+**Why the body tie dominated:** the diode-connected bias PMOS's body terminal sets the device's effective threshold voltage via the body effect. Tying it to `Vp` (its own drain/gate) instead of `VDD` forward-biases the source-body junction, shifting the device into a different operating region entirely — not just scaling its current capacity the way a width change does. Because this single node (`Vp`) gates the starve PMOS in all 7 ring stages simultaneously, a large shift there is amplified across the whole ring, explaining why it accounted for the majority of the frequency gap while the width change alone was negligible.
+
+**Which body connection is correct:** `VDD` is the standard, electrically correct choice. Tying a PMOS body to a node that sits below its source (here, `Vp` measured 0.95–1.25 V against a 1.8 V source) forward-biases the source-body junction diode, causing leakage current into the n-well and elevated latch-up risk — the kind of connection that would fail well-tap/antenna DRC checks in a real layout. The reference repo's `Vp`-tied body is best treated as a likely modeling artifact in its schematic rather than an intentional design choice. Reproducing it was necessary only to numerically match the reference's *reported* frequency — it is not being adopted as the corrected/final version of this block. The standard-compliant `VDD`-tied netlist remains the version this project treats as correct; the `Vp`-tied variant exists solely as a validation/comparison data point against the reference.
+
+### Waveform Comparison
+
+*[Insert: `v(OSC)` transient plots, `Vctrl = 0.7V` and `Vctrl = 0.8V`, for the standard body=VDD netlist vs. the body=Vp (reference-matching) netlist, side by side or overlaid, to visually confirm the frequency divergence documented in the convergence table above.]*
+
+### Simulation Results
+
+| Netlist variant | Body tie | `freq_0p7` | `freq_0p8` | K_vco (approx, 0.7→0.8V) |
+|---|---|---|---|---|
+| Reference repo | `Vp` | 3.590529e+06 Hz | 1.001886e+07 Hz | ~64 MHz/V |
+| AI-generated, body=`VDD` (standard, project's adopted version) | `VDD` | 1.540092e+07 Hz | 6.249844e+07 Hz | ~471 MHz/V |
+| AI-generated, body=`Vp` + parasitics (reference-matching validation) | `Vp` | 3.590887e+06 Hz | 1.000204e+07 Hz | ~64 MHz/V |
+
+The standard-practice (`VDD`-tied) netlist is carried forward as this project's VCO deliverable. It exhibits substantially higher frequency and `K_vco` than the reference design at the same bias points — a real sizing/gain difference to account for during closed-loop PLL integration, not a simulation error. The `Vp`-tied variant is retained only as evidence that the frequency gap is fully explained by these three device-level differences, not by any remaining topological or measurement discrepancy.
