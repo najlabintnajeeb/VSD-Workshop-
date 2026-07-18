@@ -431,3 +431,48 @@ comparing the two ratios directly.
 > injection — so the 2.47× (Repo) and 1.9× (AI-Generated) ratios are each
 > valid on their own but not a strict magnitude comparison against each
 > other.
+
+
+## Block: Frequency Divider (÷8) — FD
+
+**Status:** Simulation run in ngspice. Output waveform obtained (v(clk1), v(f_out)).
+Naj to independently verify exact period/frequency values from data before final numbers are quoted anywhere.
+
+### AI Prompt Used
+> Generate a SPICE netlist for a ÷8 frequency divider for a PLL feedback path, in SKY130,
+> matching the attached schematic (`f/2 ckt`, a single ÷2 stage built from `pfet_01v8`/`nfet_01v8`
+> devices). Requirements: Divide-by-8 = three cascaded divide-by-2 stages. Use real SKY130
+> primitive subckt names (`sky130_fd_pr__pfet_01v8`, `sky130_fd_pr__nfet_01v8`), not bare
+> xschem symbol names.
+
+### Topology
+Three cascaded static transmission-gate master-slave toggle latches (`fd` subckt), each dividing
+by 2, chained together for an overall ÷8. Each stage generates a local `clk_b` and uses four
+transmission gates (TG1–TG4) gating two back-to-back inverter latches — a standard TFF-via-TG
+construction, consistent with the dual-flip-flop / T-FF description in the Week 1 report.
+
+### Errors Encountered & Fixes
+
+| # | Error | Cause | Fix |
+|---|---|---|---|
+| 1 | `unknown subckt: ...pfet_01v8 l=0.15u w=2.5u nf=1` | Used bare `pfet_01v8`/`nfet_01v8` — those are xschem symbol labels, not actual SPICE subckt names in the `.lib` | Renamed to `sky130_fd_pr__pfet_01v8` / `sky130_fd_pr__nfet_01v8` |
+| 2 | `could not find a valid modelname for sky130_fd_pr__pfet_01v8` | Missing `ad/as/pd/ps/nrd/nrs` area/perimeter params — the PDK model bind requires them explicitly rather than defaulting | Added explicit `ad/as/pd/ps/nrd/nrs` parameters, computed from device W/L via wrapper subckts (`nfet_u`/`pfet_u`) |
+| 3 | Divide-by-2 stage logically wrong (dynamic clock-gated inverter guess) | Reconstructed topology from the schematic image alone; actual circuit is a static TG-based master-slave toggle latch | Rebuilt the `fd` subckt as a static transmission-gate master-slave toggle latch (TG1–TG4 + 4 inverters), correcting the flip-flop topology |
+| 4 | `instance vgnd is a shorted VSRC` / no such vector `clk1` | Added `VGND GND 0 DC 0` to tie a named `GND` net to ground — a 0V source between two nodes is a short in ngspice | Replaced the named `GND` net with SPICE's actual ground node `0` everywhere; dropped `VGND`/`.GLOBAL GND` |
+
+### Structural Comparison vs. Reference Repo Netlist
+
+| Aspect | AI-generated | Reference repo |
+|---|---|---|
+| ad/as/pd/ps/nrd/nrs | Computed once via `pfet_u`/`nfet_u` wrapper subckts, reused per instance | Written out explicitly on all transistor lines per stage |
+| Lines per `fd` instance | ~20 (calls to wrapper subckts) | ~40+ (full `XM...` lines with all params inline) |
+| Top-level cascade | `fd` × 3 wrapped inside an `fd_8` subckt, instantiated once | `fd` × 3 called directly at top level, no wrapper |
+| GND handling | `GND` net collapsed to SPICE's ground node `0` everywhere | `GND` as a named net + `.GLOBAL GND`, tied to 0V via a source elsewhere in their flow |
+| `.control` block | `tran 1ns 5us` + `plot v(clk1)+2 v(f_out)` | `tran 1ns 5us` only, no plot command shown |
+
+### Simulation Result
+Transient ran successfully (5911 data rows, 5 µs window, 1 ns step). Waveform shows `clk1` toggling
+at high density and `f_out` producing a lower-frequency output consistent with a divide relationship.
+**Exact period/frequency values and duty cycle to be measured independently from the output data
+(via `.meas` or the plotted trace) before being recorded as verified results — none are asserted here.**
+
