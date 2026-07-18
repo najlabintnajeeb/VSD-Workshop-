@@ -14,7 +14,7 @@ Continuing from the reference repo, Week 2 & 3 focus only on the **circuit desig
 | 2 | Reference clock vs feedback clock relation | ✅ Complete |
 | 3 | **Phase Frequency Detector (PFD)** — UP/DOWN pulse generation | ✅ Complete |
 | 4 | Charge pump — source/sink current behavior | Loop filter — control-voltage generation| ✅ Complete |
-| 5 | VCO — tuning and frequency sweep | Pending |
+| 5 | VCO — tuning and frequency sweep |  ✅ Complete |
 | 6 | Divide-by-N feedback divider | ✅ Complete |
 | 7 | Lock behavior / lock time | Pending |
 | 8 | Jitter / noise awareness | Pending |
