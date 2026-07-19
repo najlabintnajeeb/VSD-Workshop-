@@ -6,24 +6,6 @@ Reference repo: [`nitjsr_pll_130nm`](https://github.com/himansh107/nitjsr_pll_13
 
 Continuing from the reference repo, Week 2 & 3 focus  on the **circuit design side** of the SKY130-based on-chip clock-multiplier PLL . The goal is to understand and recreate each PLL building block step by step using AI-assisted prompts (ChatGPT/Codex or similar), verify behavior in ngspice/xschem with SKY130 models where possible, and document prompts, tools, generated netlists, simulation attempts, errors/fixes, and observations for each block.
 
-## Scope — Blocks Covered
-
-| # | Block | Status |
-|---|---|---|
-| 1 | PLL basics / phase-frequency locking concept | ✅ Complete |
-| 2 | Reference clock vs feedback clock relation | ✅ Complete |
-| 3 | **Phase Frequency Detector (PFD)** — UP/DOWN pulse generation | ✅ Complete |
-| 4 | Charge pump — source/sink current behavior | Loop filter — control-voltage generation| ✅ Complete |
-| 5 | VCO — tuning and frequency sweep |  ✅ Complete |
-| 6 | Divide-by-N feedback divider | ✅ Complete |
-| 7 | Lock behavior / lock time | Pending |
-| 8 | Jitter / noise awareness | Pending |
-| 9 | Duty-cycle observation | Pending |
-| 10 | Pre-layout SPICE simulation summary | Pending |
-| 11 | SKY130 device/model usage notes | Pending |
-
-Sections below are filled in as each block is completed.
-
 ---
 
 ## 1. PLL Basics, Phase/Frequency Lock Concept, and Reference-vs-Feedback Clock Relation
@@ -98,7 +80,7 @@ The PFD compares the reference clock (`f_clk_in`) against the feedback/VCO clock
 - `DOWN` pulse when `f_vco` leads `f_clk_in` (feedback is faster/leading)
 - A reset condition that clears both outputs once both edges have been registered
 
-### 2.2 AI Prompt Used
+### 2.2 AI Prompt 1
 
 **Tool:** ChatGPT (GPT-based assistant)
 
@@ -264,10 +246,56 @@ Both netlists were run in ngspice against the same SKY130 `sky130_fd_sc_hd` stan
 
 
 AI Prompt 2:
-since the prompt 1 was totally differently from the reference repo , asked ai to regeenrate the pfd with the below prompt 
+since the prompt 1 was totally differently from the reference repo , asked ai to regeenrate the pfd with the below prompt .this was used for further pll full netlist
 
 Generate a complete ngspice testbench for a Phase Frequency Detector (PFD) extracted from a SKY130 PLL. Use SKY130 HD standard cells only (sky130_fd_sc_hd__nand2_1, nand3_1, nand4_1, inv_1) with correct SPICE pin order. Preserve the extracted gate-level topology without redesigning the logic. Include SKY130 .lib and .include files, VDD=1.8V, two asynchronous clock inputs (10 MHz reference and slightly faster 10.53 MHz feedback) to create a phase/frequency error, instantiate the PFD as a subcircuit, add small output capacitive loads (~6 fF) on UP and DOWN, perform transient analysis (tran 10p 1u), and plot the reference clock, feedback clock, UP, and DOWN waveforms. Generate a complete, modular, runnable ngspice netlist only.
 
+<details><summary>Netlist</summary>
+* PFD Testbench - Constant Phase Difference (f_out leads)
+.lib /opt/pdk/sky130A/libs.tech/ngspice/sky130.lib.spice tt
+.include /opt/pdk/sky130B/libs.ref/sky130_fd_sc_hd/spice/sky130_fd_sc_hd.spice
+
+* --- Power Supply Sources ---
+Vcc VDD GND 1.8v
+
+* --- Input Clocks (Static 2ns Phase Shift: f_out leads) ---
+V2 f_clk_in GND pulse(0 1.8v 7n 60p 60p 50n 100n)  
+V3 f_out    GND pulse(0 1.8v 5n 60p 60p 50n 100n)  
+
+* --- PFD Subcircuit ---
+.subckt PFD f_clk_in f_out up down VDD GND
+    x11 net12 net9 net17 net15 GND GND VDD VDD net14 sky130_fd_sc_hd__nand4_1
+    x12 net23 net22 GND GND VDD VDD net9  sky130_fd_sc_hd__nand2_1
+    x13 f_out GND GND VDD VDD net21 sky130_fd_sc_hd__inv_1
+    x14 net11 net12 net14 GND GND VDD VDD net23 sky130_fd_sc_hd__nand3_1
+    x15 net14 net15 net19 GND GND VDD VDD net20 sky130_fd_sc_hd__nand3_1
+    x16 net9 net13 GND GND VDD VDD net12 sky130_fd_sc_hd__nand2_1
+    x17 net12 net14 GND GND VDD VDD net13 sky130_fd_sc_hd__nand2_1
+    x18 net14 net15 GND GND VDD VDD net16 sky130_fd_sc_hd__nand2_1
+    x19 net16 net17 GND GND VDD VDD net15 sky130_fd_sc_hd__nand2_1
+    x20 net21 net20 GND GND VDD VDD net17 sky130_fd_sc_hd__nand2_1
+    x21 f_clk_in GND GND VDD VDD net22 sky130_fd_sc_hd__inv_1
+    x22 net9 GND GND VDD VDD net10 sky130_fd_sc_hd__inv_1
+    x23 net10 GND GND VDD VDD net11 sky130_fd_sc_hd__inv_1
+    x24 net17 GND GND VDD VDD net18 sky130_fd_sc_hd__inv_1
+    x25 net18 GND GND VDD VDD net19 sky130_fd_sc_hd__inv_1
+    x26 net23 GND GND VDD VDD up    sky130_fd_sc_hd__inv_1
+    x27 net20 GND GND VDD VDD down  sky130_fd_sc_hd__inv_1
+.ends PFD
+
+Xpfd1 f_clk_in f_out up down VDD GND PFD
+
+C1 up   GND 6f
+C2 down GND 6f
+
+.control
+tran 0.1ns 500n
+plot v(up)+2 v(f_clk_in) v(down)+4 v(f_out)
+.endc
+
+.GLOBAL GND
+.end
+</details>
 
 
 ---
@@ -602,13 +630,5 @@ v(OSC)` transient plots, `Vctrl = 0.7V` and `Vctrl = 0.8V`, for the standard bod
 | Reference repo | `Vp` | 3.590529e+06 Hz | 1.001886e+07 Hz | ~64 MHz/V |
 | AI-generated, body=`VDD` (standard, project's adopted version) | `VDD` | 1.540092e+07 Hz | 6.249844e+07 Hz | ~471 MHz/V |
 | AI-generated, body=`Vp` + parasitics (reference-matching validation) | `Vp` | 3.590887e+06 Hz | 1.000204e+07 Hz | ~64 MHz/V |
-
-PLL (Top-Level Integration)
-
-AI Prompt
-Generate a complete hierarchical PLL SPICE netlist by integrating previously verified PFD, Charge Pump, Loop Filter, Current-Starved VCO, and Divide-by-8 subcircuits. Use SKY130 (130nm), VDD=1.8V, and ngspice-compatible syntax. Preserve each block hierarchy without redesigning internal circuits. Connect PFD → Charge Pump → Loop Filter → VCO → Divider → PFD feedback. Include required .lib/.include files, top-level instantiations, power supplies, reference clock source, initial conditions (.ic), transient analysis, .meas commands, and waveform plots. Generate a complete, modular, runnable SPICE netlist only.
-
-The generated PLL netlist was successfully assembled using the previously verified functional blocks while preserving the hierarchical design structure. The AI-generated implementation follows the same top-level architecture as the reference repository, including the complete feedback loop consisting of the Phase Frequency Detector, Charge Pump, Loop Filter, Current-Starved Voltage-Controlled Oscillator, and Divide-by-8 Frequency Divider.
-The generated netlist includes all essential simulation components required for ngspice execution, such as SKY130 library references, power supplies, reference clock source, initial conditions, transient analysis, measurement commands, and waveform plotting directives. This enables complete top-level PLL simulation without requiring manual integration of individual circuit blocks.
 
 
