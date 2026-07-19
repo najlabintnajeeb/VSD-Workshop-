@@ -262,6 +262,14 @@ Both netlists were run in ngspice against the same SKY130 `sky130_fd_sc_hd` stan
 - The AI-generated testbench's two-phase behavioral stimulus (`B` element) is a departure from the repo's style and was chosen to verify both `UP` and `DOWN` assertion paths without needing two separate simulation runs.
 - The dead zone and frequency-vs-phase-lock distinction discussed in Section 1 explain, at a theoretical level, why the two-phase stimulus is expected to yield only one clean, measurable pulse width per phase rather than symmetric UP/DOWN behavior throughout.
 
+
+AI Prompt 2:
+since the prompt 1 was totally differently from the reference repo , asked ai to regeenrate the pfd with the below prompt 
+
+Generate a complete ngspice testbench for a Phase Frequency Detector (PFD) extracted from a SKY130 PLL. Use SKY130 HD standard cells only (sky130_fd_sc_hd__nand2_1, nand3_1, nand4_1, inv_1) with correct SPICE pin order. Preserve the extracted gate-level topology without redesigning the logic. Include SKY130 .lib and .include files, VDD=1.8V, two asynchronous clock inputs (10 MHz reference and slightly faster 10.53 MHz feedback) to create a phase/frequency error, instantiate the PFD as a subcircuit, add small output capacitive loads (~6 fF) on UP and DOWN, perform transient analysis (tran 10p 1u), and plot the reference clock, feedback clock, UP, and DOWN waveforms. Generate a complete, modular, runnable ngspice netlist only.
+
+
+
 ---
 
 ## 3. Charge Pump and Loop Filter
@@ -595,4 +603,12 @@ v(OSC)` transient plots, `Vctrl = 0.7V` and `Vctrl = 0.8V`, for the standard bod
 | AI-generated, body=`VDD` (standard, project's adopted version) | `VDD` | 1.540092e+07 Hz | 6.249844e+07 Hz | ~471 MHz/V |
 | AI-generated, body=`Vp` + parasitics (reference-matching validation) | `Vp` | 3.590887e+06 Hz | 1.000204e+07 Hz | ~64 MHz/V |
 
-The standard-practice (`VDD`-tied) netlist is carried forward as this project's VCO deliverable. It exhibits substantially higher frequency and `K_vco` than the reference design at the same bias points — a real sizing/gain difference to account for during closed-loop PLL integration, not a simulation error. The `Vp`-tied variant is retained only as evidence that the frequency gap is fully explained by these three device-level differences, not by any remaining topological or measurement discrepancy.
+PLL (Top-Level Integration)
+
+AI Prompt
+Generate a complete hierarchical PLL SPICE netlist by integrating previously verified PFD, Charge Pump, Loop Filter, Current-Starved VCO, and Divide-by-8 subcircuits. Use SKY130 (130nm), VDD=1.8V, and ngspice-compatible syntax. Preserve each block hierarchy without redesigning internal circuits. Connect PFD → Charge Pump → Loop Filter → VCO → Divider → PFD feedback. Include required .lib/.include files, top-level instantiations, power supplies, reference clock source, initial conditions (.ic), transient analysis, .meas commands, and waveform plots. Generate a complete, modular, runnable SPICE netlist only.
+
+The generated PLL netlist was successfully assembled using the previously verified functional blocks while preserving the hierarchical design structure. The AI-generated implementation follows the same top-level architecture as the reference repository, including the complete feedback loop consisting of the Phase Frequency Detector, Charge Pump, Loop Filter, Current-Starved Voltage-Controlled Oscillator, and Divide-by-8 Frequency Divider.
+The generated netlist includes all essential simulation components required for ngspice execution, such as SKY130 library references, power supplies, reference clock source, initial conditions, transient analysis, measurement commands, and waveform plotting directives. This enables complete top-level PLL simulation without requiring manual integration of individual circuit blocks.
+
+
