@@ -1,0 +1,45 @@
+* PFD Testbench - Dynamic Frequency Drift (Different Periods)
+.lib /opt/pdk/sky130A/libs.tech/ngspice/sky130.lib.spice tt
+.include /opt/pdk/sky130B/libs.ref/sky130_fd_sc_hd/spice/sky130_fd_sc_hd.spice
+
+* --- Power Supply Sources ---
+Vcc VDD GND 1.8v
+
+* --- Input Clocks (Drifting Frequency) ---
+V2 f_clk_in GND pulse(0 1.8v 5n 60p 60p 50n 100n)  
+V3 f_out    GND pulse(0 1.8v 5n 60p 60p 25n 50n) 
+
+* --- PFD Subcircuit ---
+.subckt PFD f_clk_in f_out up down VDD GND
+    x11 net12 net9 net17 net15 GND GND VDD VDD net14 sky130_fd_sc_hd__nand4_1
+    x12 net23 net22 GND GND VDD VDD net9  sky130_fd_sc_hd__nand2_1
+    x13 f_out GND GND VDD VDD net21 sky130_fd_sc_hd__inv_1
+    x14 net11 net12 net14 GND GND VDD VDD net23 sky130_fd_sc_hd__nand3_1
+    x15 net14 net15 net19 GND GND VDD VDD net20 sky130_fd_sc_hd__nand3_1
+    x16 net9 net13 GND GND VDD VDD net12 sky130_fd_sc_hd__nand2_1
+    x17 net12 net14 GND GND VDD VDD net13 sky130_fd_sc_hd__nand2_1
+    x18 net14 net15 GND GND VDD VDD net16 sky130_fd_sc_hd__nand2_1
+    x19 net16 net17 GND GND VDD VDD net15 sky130_fd_sc_hd__nand2_1
+    x20 net21 net20 GND GND VDD VDD net17 sky130_fd_sc_hd__nand2_1
+    x21 f_clk_in GND GND VDD VDD net22 sky130_fd_sc_hd__inv_1
+    x22 net9 GND GND VDD VDD net10 sky130_fd_sc_hd__inv_1
+    x23 net10 GND GND VDD VDD net11 sky130_fd_sc_hd__inv_1
+    x24 net17 GND GND VDD VDD net18 sky130_fd_sc_hd__inv_1
+    x25 net18 GND GND VDD VDD net19 sky130_fd_sc_hd__inv_1
+    x26 net23 GND GND VDD VDD up    sky130_fd_sc_hd__inv_1
+    x27 net20 GND GND VDD VDD down  sky130_fd_sc_hd__inv_1
+.ends PFD
+
+Xpfd1 f_clk_in f_out up down VDD GND PFD
+
+C1 up   GND 6f
+C2 down GND 6f
+
+.control
+* Extended simulation window to 1.2 microseconds to see multiple sweep phases
+tran 0.1ns 1.2u
+plot v(up)+2 v(f_clk_in)+6 v(down) v(f_out)+4
+.endc
+
+.GLOBAL GND
+.end
