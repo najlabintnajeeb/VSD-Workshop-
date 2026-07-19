@@ -275,7 +275,6 @@ Both netlists run in ngspice against the same SKY130 `sky130_fd_sc_hd` library (
 
 Constant Phase:
 
-<img width="500" height="300" alt="Screenshot 2026-07-19 at 1 32 55 pm" src="https://github.com/user-attachments/assets/d819826d-21bd-41c7-9aee-f040cf628a2d" />
 
 Differnt phase: 
 
