@@ -1,0 +1,112 @@
+* Sky130 VCO Block Netlist with Fixed Testbench
+
+.lib /opt/pdk/sky130A/libs.tech/ngspice/sky130.lib.spice tt
+.include /opt/pdk/sky130B/libs.ref/sky130_fd_sc_hd/spice/sky130_fd_sc_hd.spice
+
+* ==============================================================================
+* SUB-CIRCUIT DEFINITIONS
+* ==============================================================================
+
+.subckt cs_inv in out Vp Vn VDD GND
+* Subcircuit for the Current-Starved Inverter Cell
+* Top Charging Control (PMOS Header)
+X_M1 net_p Vp VDD VDD sky130_fd_pr__pfet_01v8 w=0.72 l=0.18
+
+* Switching Inverter Stage
+X_M2 out in net_p VDD sky130_fd_pr__pfet_01v8 w=0.72 l=0.18
+X_M3 out in net_n GND sky130_fd_pr__nfet_01v8 w=0.36 l=0.18
+
+* Bottom Discharging Control (NMOS Footer)
+X_M4 net_n Vn GND GND sky130_fd_pr__nfet_01v8 w=0.36 l=0.18
+.ends cs_inv
+
+.subckt vco vctrl OSC VDD GND
+* 1. Voltage-to-Current Control Bias Stage
+R1 vctrl Vn 1
+X_M1 Vp Vn GND GND sky130_fd_pr__nfet_01v8 w=0.36 l=0.18
+X_M2 Vp Vp VDD Vp sky130_fd_pr__pfet_01v8 w=1.8 l=0.18
+
+* 2. 7-Stage Ring Oscillator Core
+X_x1 n1 n2 Vp Vn VDD GND cs_inv
+X_x2 n2 n3 Vp Vn VDD GND cs_inv
+X_x3 n3 n4 Vp Vn VDD GND cs_inv
+X_x5 n4 n5 Vp Vn VDD GND cs_inv
+X_x6 n5 n6 Vp Vn VDD GND cs_inv
+X_x7 n6 n7 Vp Vn VDD GND cs_inv
+X_x4 n7 n1 Vp Vn VDD GND cs_inv
+
+* 3. Output Buffer Inverter Stage
+X_M4 OSC n1 VDD VDD sky130_fd_pr__pfet_01v8 w=0.72 l=0.18
+X_M3 OSC n1 GND GND sky130_fd_pr__nfet_01v8 w=0.36 l=0.18
+.ends vco
+
+* ==============================================================================
+* TESTBENCH ENVIRONMENT
+* ==============================================================================
+
+* Global Power Supplies (0 is the native ngspice ground node)
+V_VDD VDD 0 DC 1.8
+
+* Device Under Tut (DUT) Instance (Mapping subcircuit GND pin directly to node 0)
+X_DUT vctrl OSC VDD 0 vco
+
+* Control Voltage Input Source
+V_VCTRL vctrl 0 DC 0.7V
+
+* Initial Conditions to kickstart oscillation in the ring
+.ic v(X_DUT.n1)=0 v(X_DUT.n2)=1.8 v(X_DUT.n3)=0
+
+* ==============================================================================
+* SIMULATION CONTROL & ANALYSIS
+* ==============================================================================
+
+* ==============================================================================
+* SIMULATION CONTROL & ANALYSIS WITH FREQUENCY VERIFICATION
+* ==============================================================================
+
+* ==============================================================================
+* SIMULATION CONTROL & ANALYSIS WITH FIXED MEASUREMENT EDGES
+* ==============================================================================
+
+.control
+* --- RUN 1: Vctrl = 0.7V ---
+echo "--- Running VCO Simulation at Vctrl = 0.7V ---"
+tran 1ns 5.5us
+
+* Measure early cycles (3rd to 4th edge) to ensure it falls within the 5.5us window
+meas tran t1_0p7 trig v(OSC) val=0.9 rise=3 targ v(OSC) val=0.9 rise=4
+
+* Calculate the frequency for 0.7V
+let freq_0p7 = 1 / t1_0p7
+echo "Frequency at Vctrl = 0.7V is:"
+print freq_0p7
+
+plot v(OSC) title "VCO Output (OSC) at Vctrl = 0.7V"
+write vco_test_0p7V.raw v(OSC) v(vctrl)
+
+
+* --- RUN 2: Vctrl = 0.8V ---
+echo "--- Running VCO Simulation at Vctrl = 0.8V ---"
+alter v_vctrl = 0.8V
+tran 1ns 5.5us
+
+* Measure using the exact same edge indices for a direct comparison
+meas tran t1_0p8 trig v(OSC) val=0.9 rise=3 targ v(OSC) val=0.9 rise=4
+
+* Calculate the frequency for 0.8V
+let freq_0p8 = 1 / t1_0p8
+echo "Frequency at Vctrl = 0.8V is:"
+print freq_0p8
+
+plot v(OSC) title "VCO Output (OSC) at Vctrl = 0.8V"
+write vco_test_0p8V.raw v(OSC) v(vctrl)
+
+
+* --- VERIFICATION SUMMARY ---
+echo "=========================================================="
+echo "Verification Summary:"
+print freq_0p7 freq_0p8
+echo "=========================================================="
+
+.endc
+.end

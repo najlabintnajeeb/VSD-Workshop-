@@ -1,0 +1,121 @@
+*******************************************************************
+* SKY130 130nm PDK, VDD = 1.8V
+* Transcribed from xschem schematic (UP/DOWN inverters -> dummy
+* replica inverters -> cascoded switch to CP, with dummy/replica
+* legs for charge-injection / clock-feedthrough cancellation).
+*
+* NOTE: node wiring inside the M23/M24/M25/M26 (top) and
+* M17/M18/M19/M20 (bottom) switch cluster is reconstructed to the
+* standard cascoded-switch + dummy-leg topology consistent with the
+* device count, labels and W/L sizes on the schematic. Cross-check
+* against the xschem-exported netlist for exact node correspondence
+* if bit-for-bit match to the layout is required.
+*******************************************************************
+
+.param VDD_VAL = 1.8
+
+*-------------------- SKY130 PDK model include ---------------------
+.lib /opt/pdk/sky130A/libs.tech/ngspice/sky130.lib.spice tt
+.include /opt/pdk/sky130B/libs.ref/sky130_fd_sc_hd/spice/sky130_fd_sc_hd.spice
+
+
+*=====================================================================
+* Subcircuit: CHARGE_PUMP
+* Pins: UP DOWN CP VDD GND
+*=====================================================================
+.subckt CHARGE_PUMP UP DOWN CP VDD GND
+
+*--------------------------- UP (pfet) HALF -------------------------
+* INV1: UP -> up_bar
+XM14 up_bar UP VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+XM7  up_bar UP GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+
+* INV2 (delay-matched dummy/replica): up_bar -> up_bar2
+XM21 up_bar2 up_bar VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+XM15 up_bar2 up_bar GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+
+* Main cascoded pull-up switch path: VDD -> np1 -> CP
+XM26 np1 up_bar  VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=45   nf=1
+XM25 CP  up_bar  np1 VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+
+* Dummy/replica leg (bleeds to VDD instead of CP -> charge injection /
+* clock feedthrough cancellation; gated by up_bar2 so it conducts
+* exactly when the real path (above) is off, keeping total supply
+* current roughly constant regardless of UP)
+XM24 np2 up_bar2 VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+XM23 vdummy_p up_bar2 np2 VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+
+*-------------------------- DOWN (nfet) HALF -------------------------
+* INV1: DOWN -> down_bar
+XM12 down_bar DOWN VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+XM8  down_bar DOWN GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+
+* INV2 (delay-matched dummy/replica): down_bar -> down_bar2
+XM22 down_bar2 down_bar VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1
+XM16 down_bar2 down_bar GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+
+* Main cascoded pull-down switch path: GND -> nn1 -> CP
+XM20 nn1 down_bar2 GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=15   nf=1
+XM19 CP  down_bar2 nn1 GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+
+* Dummy/replica leg (bleeds to GND instead of CP); gated by down_bar
+* so it conducts exactly when the real path (above) is off
+XM18 nn2 down_bar  GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+XM17 vdummy_n down_bar nn2 GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1
+
+.ends CHARGE_PUMP
+
+*=====================================================================
+* Subcircuit: CP_LF  (charge pump + 2nd-order passive loop filter,
+* sized together since the LF's own R1/C1/C2 load the CP's finite
+* output resistance -- treating them separately hides that loading
+* and understates settling time / ripple)
+* Pins: UP DOWN CTRL VDD GND
+*=====================================================================
+.subckt CP_LF UP DOWN CTRL VDD GND
+
+XCP UP DOWN CP VDD GND CHARGE_PUMP
+
+* C1 directly at CP sets the pump's instantaneous slew rate
+* (dV/dt = Icp/C1) and dominates the ripple seen at CP.
+* R1-C2 forms the stabilizing zero/pole that smooths CP -> CTRL
+* (CTRL = VCO control voltage). fz = 1/(2*pi*R1*C1),
+* fp = 1/(2*pi*R1*(C1*C2/(C1+C2))).
+C1  CP   GND  100p
+R1  CP   CTRL 1.5k
+C2  CTRL GND  200p
+
+.ends CP_LF
+
+*=====================================================================
+* Testbench
+* TWO SEPARATE instances, each pumped continuously for the whole run:
+*   - CPLF_U : UP toggles, DOWN held low  -> CTRL should ramp UP
+*   - CPLF_D : DOWN toggles, UP held low  -> CTRL should ramp DOWN
+* Keeping them as separate instances (rather than one shared node)
+* means each one's C1/C2 start from the same reset state and you get
+* a clean monotonic charge/discharge trend without one path's pulses
+* clawing back the other's progress mid-run.
+*=====================================================================
+Vdd  VDD  0  DC {VDD_VAL}
+
+* --- UP-only (charging) instance ---
+Vup_u   up_u   0  PULSE(0 {VDD_VAL} 5n 5p 5p 10n 20n)
+Vdn_u   down_u 0  DC 0
+XCPLF_U up_u down_u vctrl_u VDD 0 CP_LF
+
+* --- DOWN-only (discharging) instance ---
+Vup_d   up_d   0  DC 0
+Vdn_d   down_d 0  PULSE(0 {VDD_VAL} 5n 5p 5p 10n 20n)
+XCPLF_D up_d down_d vctrl_d VDD 0 CP_LF
+
+.tran 1.5kns 700ns
+.control
+run
+plot  v(vctrl_u)
+plot v(vctrl_d)
+meas tran v_ctrl_u_end find v(vctrl_u) at=700n
+meas tran v_ctrl_d_end find v(vctrl_d) at=700n
+.endc
+
+.end

@@ -1,0 +1,101 @@
+**********************************************************************
+* Divide-by-8 Frequency Divider for PLL - SKY130
+* 3x cascaded divide-by-2 stages (fd), each a static transmission-gate
+* master-slave toggle latch:
+*   - Inv1/Inv2 + TG2 = master latch (holds while clk=1)
+*   - Inv3/Inv4 + TG4 = slave latch  (holds while clk=0)
+*   - TG1 feeds q_b (=NOT q) into the master as D -> toggle behavior
+*   - local clk_b generated per stage
+* Device sizing: nfet_01v8 W=1/L=0.15, pfet_01v8 W=2.5/L=0.15, nf=1.
+**********************************************************************
+
+.lib /opt/pdk/sky130A/libs.tech/ngspice/sky130.lib.spice tt
+.include /opt/pdk/sky130B/libs.ref/sky130_fd_sc_hd/spice/sky130_fd_sc_hd.spice
+
+.GLOBAL VDD
+
+**********************************************************************
+* Parameterized device wrappers (compute ad/as/pd/ps/nrd/nrs so the
+* fd subckt below doesn't need to repeat these on every line)
+**********************************************************************
+.subckt nfet_u d g s b W=1 L=0.15 nf=1
+XM d g s b sky130_fd_pr__nfet_01v8 L={L} W={W} nf={nf}
++ ad={int((nf+1)/2) * W/nf * 0.29} as={int((nf+2)/2) * W/nf * 0.29}
++ pd={2*int((nf+1)/2) * (W/nf + 0.29)} ps={2*int((nf+2)/2) * (W/nf + 0.29)}
++ nrd={0.29/W} nrs={0.29/W} sa=0 sb=0 sd=0 mult=1 m=1
+.ends nfet_u
+
+.subckt pfet_u d g s b W=2.5 L=0.15 nf=1
+XM d g s b sky130_fd_pr__pfet_01v8 L={L} W={W} nf={nf}
++ ad={int((nf+1)/2) * W/nf * 0.29} as={int((nf+2)/2) * W/nf * 0.29}
++ pd={2*int((nf+1)/2) * (W/nf + 0.29)} ps={2*int((nf+2)/2) * (W/nf + 0.29)}
++ nrd={0.29/W} nrs={0.29/W} sa=0 sb=0 sd=0 mult=1 m=1
+.ends pfet_u
+
+**********************************************************************
+* fd: divide-by-2 stage. Ports: q (output), clk (input)
+**********************************************************************
+.subckt fd q clk
+
+* local clk_b generator
+Xclkb_n clk_b clk 0 0 nfet_u W=1
+Xclkb_p clk_b clk VDD VDD pfet_u W=2.5
+
+* Inv1: net1 = INV(net2)
+Xinv1_n net1 net2 0 0 nfet_u W=1
+Xinv1_p net1 net2 VDD VDD pfet_u W=2.5
+
+* Inv2: net3 = INV(net1)
+Xinv2_n net3 net1 0 0 nfet_u W=1
+Xinv2_p net3 net1 VDD VDD pfet_u W=2.5
+
+* TG1 (net2 <-> q_b), on when clk=0 -> feeds D=q_b into master
+Xtg1_p q_b clk   net2 VDD pfet_u W=2.5
+Xtg1_n q_b clk_b net2 0 nfet_u W=1
+
+* TG2 (net3 <-> net2), on when clk=1 -> closes master latch loop
+Xtg2_p net2 clk_b net3 VDD pfet_u W=2.5
+Xtg2_n net2 clk   net3 0 nfet_u W=1
+
+* TG3 (net4 <-> net1), on when clk=1 -> master output feeds slave
+Xtg3_p net1 clk_b net4 VDD pfet_u W=2.5
+Xtg3_n net1 clk   net4 0 nfet_u W=1
+
+* Inv3: q = INV(net4)
+Xinv3_n q net4 0 0 nfet_u W=1
+Xinv3_p q net4 VDD VDD pfet_u W=2.5
+
+* Inv4: q_b = INV(q)
+Xinv4_n q_b q 0 0 nfet_u W=1
+Xinv4_p q_b q VDD VDD pfet_u W=2.5
+
+* TG4 (q_b <-> net4), on when clk=0 -> closes slave latch loop
+Xtg4_p net4 clk   q_b VDD pfet_u W=2.5
+Xtg4_n net4 clk_b q_b 0 nfet_u W=1
+
+.ends fd
+
+**********************************************************************
+* fd_8: cascade three divide-by-2 stages -> divide by 8
+**********************************************************************
+.subckt fd_8 clk f_out
+X1 stage1 clk    fd    ; stage1 = clk/2
+X2 stage2 stage1 fd    ; stage2 = clk/4
+X3 f_out  stage2 fd    ; f_out  = clk/8
+.ends fd_8
+
+**********************************************************************
+* Testbench
+**********************************************************************
+VVDD VDD 0 DC 1.8
+
+VIN clk1 0 PULSE(0 1.8 2n 60p 60p 100n 200n)
+
+X1 clk1 f_out fd_8
+
+.control
+tran 1ns 5us
+plot v(clk1)+2 v(f_out)
+.endc
+
+.end

@@ -1,0 +1,160 @@
+* Re-Architected AI Hierarchical Netlist Fed by Schematic Parameters
+* PDK: SKY130 130nm, VDD = 1.8V
+* Target Configuration: 10 MHz Input Ref -> 80 MHz Target Lock
+
+.title Hierarchical Phase-Locked Loop (PLL) System Netlist
+
+*=====================================================================
+* 1. PDK MODEL & CELL LIBRARY INCLUSIONS
+*=====================================================================
+.lib /opt/pdk/sky130A/libs.tech/ngspice/sky130.lib.spice tt
+.include /opt/pdk/sky130B/libs.ref/sky130_fd_sc_hd/spice/sky130_fd_sc_hd.spice
+
+*=====================================================================
+* 2. RE-ARCHITECTED HIERARCHICAL SUBCIRCUITS
+*=====================================================================
+
+* --- 2.1 Gate-Level Phase Frequency Detector (PFD) ---
+.subckt PFD f_clk_in f_out up down VDD GND
+    * Maps the precise standard-cell gate topology from your schematic
+    x11 net12 net9 net17 net15 GND GND VDD VDD net14 sky130_fd_sc_hd__nand4_1
+    x12 net23 net22 GND GND VDD VDD net9  sky130_fd_sc_hd__nand2_1
+    x13 f_out GND GND VDD VDD net21 sky130_fd_sc_hd__inv_1
+    x14 net11 net12 net14 GND GND VDD VDD net23 sky130_fd_sc_hd__nand3_1
+    x15 net14 net15 net19 GND GND VDD VDD net20 sky130_fd_sc_hd__nand3_1
+    x16 net9  net13 GND GND VDD VDD net12 sky130_fd_sc_hd__nand2_1
+    x17 net12 net14 GND GND VDD VDD net13 sky130_fd_sc_hd__nand2_1
+    x18 net14 net15 GND GND VDD VDD net16 sky130_fd_sc_hd__nand2_1
+    x19 net16 net17 GND GND VDD VDD net15 sky130_fd_sc_hd__nand2_1
+    x20 net21 net20 GND GND VDD VDD net17 sky130_fd_sc_hd__nand2_1
+    x21 f_clk_in GND GND VDD VDD net22 sky130_fd_sc_hd__inv_1
+    x22 net9  GND GND VDD VDD net10 sky130_fd_sc_hd__inv_1
+    x23 net10 GND GND VDD VDD net11 sky130_fd_sc_hd__inv_1
+    x24 net17 GND GND VDD VDD net18 sky130_fd_sc_hd__inv_1
+    x25 net18 GND GND VDD VDD net19 sky130_fd_sc_hd__inv_1
+    x26 net23 GND GND VDD VDD up    sky130_fd_sc_hd__inv_1
+    x27 net20 GND GND VDD VDD down  sky130_fd_sc_hd__inv_1
+.ends PFD
+
+* --- 2.2 Transistor-Level Charge Pump (CP) ---
+.subckt CHARGE_PUMP up down vctrl VDD GND
+    * UP Switch Path
+    XM9  up_bar  up   VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1 m=1
+    XM10 up_bar  up   GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1 m=1
+    XM19 up_bar  VDD  net26 net26 sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1 m=1
+    XM20 up_bar  GND  net26 net26 sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1 m=1
+    XM12 up_bar2 up   up_bar2 up_bar2 sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1 m=1
+    XM8  up_bar2 net26 VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=45   nf=1 m=1
+    XM6  vctrl   GND  up_bar2 up_bar2 sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1 m=1
+
+    * DOWN Switch Path
+    XM13 net27   down VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1 m=1
+    XM14 net27   down GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1 m=1
+    XM15 net27   VDD  net28 net28 sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1 m=1
+    XM16 net27   GND  net28 net28 sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1 m=1
+    XM17 net25   net28 net25 net25 sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1 m=1
+    XM7  net25   down GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=15   nf=1 m=1
+    XM5  vctrl   VDD  net25 net25 sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1 m=1
+
+    * Isolation Primitives
+    XM11 VDD GND GND VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.54 nf=1 m=1
+    XM18 GND VDD VDD GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1 m=1
+.ends CHARGE_PUMP
+
+* --- 2.3 Integrated Layout Passive Loop Filter (LF) ---
+.subckt LOOP_FILTER vctrl VDD GND
+    * Retains exact physical Sky130 model footprints from the schematic
+    XC5 vctrl GND   sky130_fd_pr__cap_mim_m3_1 W=100  L=225 m=1
+    XC3 net29 GND   sky130_fd_pr__cap_mim_m3_1 W=1000 L=125 m=1
+    XR3 net29 vctrl sky130_fd_pr__res_generic_po W=0.48 L=1 m=1
+.ends LOOP_FILTER
+
+* --- 2.4 Current-Starved Inverter Delay Cell ---
+.subckt cs_inv Vp in out Vn
+    XM1 out in net1 GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1 m=1
+    XM2 out in net2 VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.72 nf=1 m=1
+    XM3 net2 Vp VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.72 nf=1 m=1
+    XM4 net1 Vn GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1 m=1
+.ends
+
+* --- 2.5 Current-Starved Ring Oscillator VCO ---
+.subckt vco vctrl osc VDD GND
+    * Reference Bias Gen Block
+    XM1 Vp Vn GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1 m=1
+    XM2 Vp Vp VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=1.8  nf=1 m=1
+    R1  Vn vctrl 1 m=1
+
+    * 7-Stage Delay Ring Core
+    x1 Vp net6  net24 Vn cs_inv
+    x2 Vp net24 net1  Vn cs_inv
+    x3 Vp net1  net2  Vn cs_inv
+    x4 Vp net5  net6  Vn cs_inv
+    x5 Vp net2  net3  Vn cs_inv
+    x6 Vp net3  net4  Vn cs_inv
+    x7 Vp net4  net5  Vn cs_inv
+
+    * Integrated Output Buffer Stage
+    XM3 osc net6 GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36 nf=1 m=1
+    XM4 osc net6 VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.72 nf=1 m=1
+.ends vco
+
+* --- 2.6 Transmission Gate Flip-Flop Divider Cell ---
+.subckt fd q clk
+    XM2  net1   net2  GND  GND sky130_fd_pr__nfet_01v8 L=0.15 W=1   nf=1 m=1
+    XM1  net1   net2  VDD  VDD sky130_fd_pr__pfet_01v8 L=0.15 W=2.5 nf=1 m=1
+    XM3  q_b    clk   net2 VDD sky130_fd_pr__pfet_01v8 L=0.15 W=2.5 nf=1 m=1
+    XM4  q_b    clk_b net2 GND sky130_fd_pr__nfet_01v8 L=0.15 W=1   nf=1 m=1
+    XM5  net3   net1  GND  GND sky130_fd_pr__nfet_01v8 L=0.15 W=1   nf=1 m=1
+    XM6  net3   net1  VDD  VDD sky130_fd_pr__pfet_01v8 L=0.15 W=2.5 nf=1 m=1
+    XM7  net2   clk_b net3 VDD sky130_fd_pr__pfet_01v8 L=0.15 W=2.5 nf=1 m=1
+    XM8  net2   clk   net3 GND sky130_fd_pr__nfet_01v8 L=0.15 W=1   nf=1 m=1
+    XM9  net1   clk_b net4 VDD sky130_fd_pr__pfet_01v8 L=0.15 W=2.5 nf=1 m=1
+    XM10 net1   clk   net4 GND sky130_fd_pr__nfet_01v8 L=0.15 W=1   nf=1 m=1
+    XM11 q      net4  GND  GND sky130_fd_pr__nfet_01v8 L=0.15 W=1   nf=1 m=1
+    XM12 q      net4  VDD  VDD sky130_fd_pr__pfet_01v8 L=0.15 W=2.5 nf=1 m=1
+    XM15 q_b    q     GND  GND sky130_fd_pr__nfet_01v8 L=0.15 W=1   nf=1 m=1
+    XM16 q_b    q     VDD  VDD sky130_fd_pr__pfet_01v8 L=0.15 W=2.5 nf=1 m=1
+    XM17 net4   clk   q_b  VDD sky130_fd_pr__pfet_01v8 L=0.15 W=2.5 nf=1 m=1
+    XM18 net4   clk_b q_b  GND sky130_fd_pr__nfet_01v8 L=0.15 W=1   nf=1 m=1
+    XM13 clk_b  clk   GND  GND sky130_fd_pr__nfet_01v8 L=0.15 W=1   nf=1 m=1
+    XM14 clk_b  clk   VDD  VDD sky130_fd_pr__pfet_01v8 L=0.15 W=2.5 nf=1 m=1
+.ends fd
+
+* --- 2.7 Clean Structural Divide-by-8 Frequency Divider ---
+.subckt fd_8 clk f_out VDD GND
+    x8  div2 clk  fd
+    x9  div4 div2 fd
+    x10 f_out div4 fd
+.ends fd_8
+
+*=====================================================================
+* 3. SYSTEM INTERCONNECTS & TOP-LEVEL INSTANTIATIONS
+*=====================================================================
+.GLOBAL GND
+.GLOBAL VDD
+
+* Clean System-Level Modular Routing
+X_PFD f_clk_in f_out up down VDD GND    PFD
+X_CP  up down vctrl VDD GND              CHARGE_PUMP
+X_LF  vctrl VDD GND                      LOOP_FILTER
+X_VCO vctrl osc VDD GND                  vco
+X_DIV osc f_out VDD GND                  fd_8
+
+*=====================================================================
+* 4. SYSTEM TESTBENCH SOURCES & SIMULATION CONTROL DECK
+*=====================================================================
+V2 VDD GND 1.8v
+
+* Fed exactly from schematic clock definition parameters (10 MHz Ref)
+V3 f_clk_in GND pulse(0 1.8v 0 60p 60p 50n 100n)
+
+* Baseline initialization vectors to smoothly spin up the ring oscillator core
+.ic v(vctrl)=0 v(X_LF.net29)=0 v(X_VCO.net6)=0 v(X_VCO.net24)=1.8
+
+.control
+  tran .1ns 14u
+  * Tracking simulation vectors using the specific offset math requested
+  plot V(f_clk_in)+8 V(f_out)+8 V(up)+6 V(down)+4 V(vctrl)+2 V(osc)
+.endc
+
+.end
