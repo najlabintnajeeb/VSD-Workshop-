@@ -7,9 +7,7 @@
 * NOTE: node wiring inside the M23/M24/M25/M26 (top) and
 * M17/M18/M19/M20 (bottom) switch cluster is reconstructed to the
 * standard cascoded-switch + dummy-leg topology consistent with the
-* device count, labels and W/L sizes on the schematic. Cross-check
-* against the xschem-exported netlist for exact node correspondence
-* if bit-for-bit match to the layout is required.
+* device count, labels and W/L sizes on the schematic.
 *******************************************************************
 
 .param VDD_VAL = 1.8
