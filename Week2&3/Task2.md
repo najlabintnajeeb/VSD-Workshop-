@@ -6,7 +6,6 @@ Reference repo: [`nitjsr_pll_130nm`](https://github.com/himansh107/nitjsr_pll_13
 
 **Reorganization note:** every block below (Blocks 1–4) now follows the same eight-part template so the sections are directly comparable:
 `Objective → AI Prompt(s) → Reference Implementation → AI-Generated Implementation → Comparison → Errors & Fixes → Simulation Results → Observations`.
-Sub-parts are omitted (not left as empty headers) where the source material has no content for them.
 
 ---
 
@@ -40,7 +39,7 @@ f_ref ─▶│ PFD │────────────▶│ CP │──�
 Because `f_fb` is the *divided* VCO output rather than the raw VCO output, the PFD always compares two signals meant to converge to the **same frequency** at lock — even though `f_out` itself runs 8× faster than `f_ref`. The ÷8 divider is therefore the block that actually sets the multiplication factor N.
 
 ### 0.4 Phase Lock vs. Frequency Lock
-A bare phase detector (XOR, single mixer) only produces a usable error signal once the two clocks are already close in frequency. If the VCO starts far from `8 × f_ref` at power-on, a pure phase detector's output is ambiguous and the loop may never converge — the classic **frequency-acquisition problem**. This motivates the **dual-flip-flop-style PFD** used here:
+A bare phase detector (XOR, single mixer) only produces a usable error signal once the two clocks are already close in frequency. If the VCO starts far from `8 × f_ref` at power-on, a pure phase detector's output is ambiguous and the loop may never converge — the classic **frequency-acquisition problem**. 
 
 - **Frequency lock (acquisition):** when `f_clk_in` and `f_vco` differ noticeably, one of UP/DOWN stays asserted for extended, asymmetric durations (one PFD side is repeatedly re-triggered before the other ever registers an edge), steering `Vctrl` — a genuinely frequency-sensitive response enabling pull-in from a large starting error.
 - **Phase lock (tracking):** once frequencies match, UP/DOWN pulse widths shrink to encode only residual phase difference, fine-tuning `Vctrl` toward zero error.
