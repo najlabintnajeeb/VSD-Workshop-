@@ -483,9 +483,13 @@ Rebuilt as a static transmission-gate master-slave toggle latch (TG1–TG4 + 4 i
 | 4 | `instance vgnd is a shorted VSRC` / no such vector `clk1` | `VGND GND 0 DC 0` tied a named `GND` net to ground — a 0V source between two nodes is a short in ngspice | Replaced named `GND` net with SPICE's actual ground node `0` everywhere; dropped `VGND`/`.GLOBAL GND` |
 
 ### 3.7 Simulation Results
-Transient ran successfully: 5911 data rows, 5 µs window, 1 ns step. Waveform shows `clk1` toggling at high density and `f_out` producing a lower-frequency output consistent with a divide relationship.
+ Waveform shows `clk1` toggling at high density and `f_out` producing a lower-frequency output consistent with a divide relationship.
 
-**Not yet quantified:** exact period/frequency values and duty cycle are to be measured independently from the output data (via `.meas` or the plotted trace) before being recorded as verified results — none are asserted here.
+<img width="500" height="400" alt="Screenshot 2026-07-19 at 10 13 38 pm" src="https://github.com/user-attachments/assets/de8bada8-fac5-47f1-beab-991ff44eb49e" />
+
+<img width="383" height="300" alt="Screenshot 2026-07-19 at 10 16 14 pm" src="https://github.com/user-attachments/assets/efc24f78-5f61-4fda-b850-f0f3f5ac2f68" />
+
+
 
 ### 3.8 Observations
 The wrapper-subckt approach (computing junction parasitics once via `pfet_u`/`nfet_u`) meaningfully reduces per-instance line count versus the reference's fully-inlined parameter style, at the cost of one extra level of hierarchy to trace through.
