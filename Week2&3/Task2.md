@@ -269,6 +269,18 @@ Both netlists run in ngspice against the same SKY130 `sky130_fd_sc_hd` library (
 - All variants use the same `VPWR`/`GND` (or `VDD`/`GND`) convention and the same SKY130 `sky130_fd_sc_hd` cell family, keeping comparisons apples-to-apples at the technology level.
 - The dead zone and frequency-vs-phase-lock distinction from Block 0 explain, at a theoretical level, why a one-directional phase-offset stimulus is expected to yield only one clean, measurable pulse width rather than symmetric UP/DOWN behavior throughout.
 
+
+#### Simulation Results :
+
+
+Constant Phase:
+
+<img width="500" height="300" alt="Screenshot 2026-07-19 at 1 32 55 pm" src="https://github.com/user-attachments/assets/d819826d-21bd-41c7-9aee-f040cf628a2d" />
+
+Differnt phase: 
+
+<img width="500" height="300" alt="Screenshot 2026-07-19 at 1 22 31 pm" src="https://github.com/user-attachments/assets/5f51c68c-5593-4259-b96e-6406109a6d15" />
+
 ---
 
 ## Block 2 — Charge Pump + Loop Filter (CP+LF)
