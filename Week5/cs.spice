@@ -1,0 +1,9 @@
+* Isolated Current-Starved Inverter (cs_inv.spice)
+.subckt cs_inv Vp in out Vn VDD GND
+XM3 net2 Vp VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.72
+XM2 out in net2 VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.72
+XM1 out in net1 GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.42
+XM4 net1 Vn GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.42
+
+*C_load out GND 5f
+.ends

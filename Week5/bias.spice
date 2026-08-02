@@ -3,8 +3,8 @@
 .subckt vco_bias vctrl Vp Vn VDD GND
 * Direct tie: control voltage sets Vn (footer bias) for all ring stages
 R_tie Vn vctrl 1
-* XMB_N: pulls bias current from node Vp, controlled by Vn
+* MB_N: pulls bias current from node Vp, controlled by Vn
 XMB_N Vp Vn GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.42
-* XMB_P: diode-connected PMOS, sources current into Vp, self-biasing the node
+* MB_P: diode-connected PMOS, sources current into Vp, self-biasing the node
 XMB_P Vp Vp VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=1.8
 .ends
