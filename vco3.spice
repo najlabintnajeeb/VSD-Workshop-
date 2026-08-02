@@ -1,0 +1,16 @@
+* 3-Stage Current-Starved Ring VCO
+.subckt vco3 vctrl osc VDD GND
+.include vco_bias.spice
+.include cs_inv_schematic.spice
+
+X_BIAS vctrl Vp Vn VDD GND vco_bias
+
+* Ring: 3 stages, output of each feeds input of next, last feeds back to first
+X1 Vp net1 net2 Vn VDD GND cs_inv
+X2 Vp net2 net3 Vn VDD GND cs_inv
+X3 Vp net3 net1 Vn VDD GND cs_inv
+
+* Output buffer: NMOS/PMOS inverter pair, taps net1, drives osc
+XBUF_N osc net1 GND GND sky130_fd_pr__nfet_01v8 L=0.18 W=0.36
+XBUF_P osc net1 VDD VDD sky130_fd_pr__pfet_01v8 L=0.18 W=0.72
+.ends
